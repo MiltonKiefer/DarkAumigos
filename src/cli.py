@@ -1,0 +1,45 @@
+"""Interface de linha de comando da pipeline."""
+
+import argparse
+import os
+from pathlib import Path
+
+from src.leitores.dados import carregar_dados
+from src.sql.gerador import gerar_sql
+from src.transformacoes.mapas import criar_mapa_categorias, criar_mapa_estado_civil
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Converte dados MongoDB Atlas em INSERTs Oracle.")
+    parser.add_argument(
+        "--json-dir",
+        help="Diretório contendo os 3 JSONs de exemplo. Se omitido, conecta ao MongoDB Atlas.",
+    )
+    parser.add_argument(
+        "--output",
+        default=os.getenv("OUTPUT_SQL", "carga_oracle.sql"),
+        help="Arquivo SQL de saída.",
+    )
+    args = parser.parse_args()
+    dados = carregar_dados(args)
+    sql = gerar_sql(dados)
+    caminho_saida = Path(args.output)
+    caminho_saida.parent.mkdir(parents=True, exist_ok=True)
+    caminho_saida.write_text(sql, encoding="utf-8")
+    quantidade_itens = sum(len(pedido.get("itens", [])) for pedido in dados["pedidos"])
+    print("Conversão concluída!")
+    print(f"Clientes:     {len(dados['clientes'])}")
+    print(f"Produtos:     {len(dados['produtos'])}")
+    print(f"Pedidos:      {len(dados['pedidos'])}")
+    print(f"Itens/vendas: {quantidade_itens}")
+    print(f"SQL gerado:   {caminho_saida.resolve()}")
+    mapa_categorias = criar_mapa_categorias(dados["produtos"])
+    mapa_estado_civil = criar_mapa_estado_civil(dados["clientes"])
+    if mapa_categorias:
+        print("\nMapa Categoria (texto -> número):")
+        for texto, codigo in mapa_categorias.items():
+            print(f"  {codigo}: {texto}")
+    if mapa_estado_civil:
+        print("\nMapa Estado_Civil (texto -> número):")
+        for texto, codigo in mapa_estado_civil.items():
+            print(f"  {codigo}: {texto}")

@@ -1,0 +1,1 @@
+"""Transformações para dimensões e fatos Oracle."""

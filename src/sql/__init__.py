@@ -1,0 +1,1 @@
+"""Geração e formatação de SQL Oracle."""

@@ -1,0 +1,1 @@
+"""Pipeline de exportação MongoDB Atlas para Oracle OLAP."""
