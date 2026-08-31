@@ -20,7 +20,20 @@ def main() -> None:
         default=os.getenv("OUTPUT_SQL", "carga_oracle.sql"),
         help="Arquivo SQL de saída.",
     )
+    parser.add_argument(
+        "--postgresql",
+        action="store_true",
+        help="Extrai do PostgreSQL/Supabase em vez do MongoDB/JSON.",
+    )
     args = parser.parse_args()
+
+    if args.postgresql:
+        from src.leitores.postgresql import salvar_sql_postgresql
+
+        caminho = salvar_sql_postgresql(args.output)
+        print(f"Conversão PostgreSQL concluída! SQL gerado: {caminho.resolve()}")
+        return
+
     dados = carregar_dados(args)
     sql = gerar_sql(dados)
     caminho_saida = Path(args.output)
