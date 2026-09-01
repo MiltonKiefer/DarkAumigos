@@ -25,13 +25,23 @@ def main() -> None:
         action="store_true",
         help="Extrai do PostgreSQL/Supabase em vez do MongoDB/JSON.",
     )
+    parser.add_argument(
+        "--load-oracle",
+        action="store_true",
+        help="Após gerar o SQL, executar o script no banco Oracle usando vars ORACLE_*.",
+    )
     args = parser.parse_args()
 
     if args.postgresql:
         from src.leitores.postgresql import salvar_sql_postgresql
+        from src.sql.loader import execute_file
 
         caminho = salvar_sql_postgresql(args.output)
         print(f"Conversão PostgreSQL concluída! SQL gerado: {caminho.resolve()}")
+        if args.load_oracle:
+            print("Executando carga no Oracle...")
+            execute_file(caminho)
+            print("Carga no Oracle concluída.")
         return
 
     dados = carregar_dados(args)
@@ -56,3 +66,9 @@ def main() -> None:
         print("\nMapa Estado_Civil (texto -> número):")
         for texto, codigo in mapa_estado_civil.items():
             print(f"  {codigo}: {texto}")
+    if args.load_oracle:
+        from src.sql.loader import execute_file
+
+        print("Executando carga no Oracle...")
+        execute_file(caminho_saida)
+        print("Carga no Oracle concluída.")

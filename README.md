@@ -1,77 +1,67 @@
 # DarkAumigos
 
-Pipeline ETL para extrair dados de **MongoDB Atlas ou PostgreSQL/Supabase** e
-gerar comandos `INSERT` compatíveis com o modelo dimensional Oracle do projeto.
+Pipeline de ETL para extrair dados do MongoDB Atlas e gerar uma carga SQL
+compatível com o modelo dimensional Oracle OLAP do projeto de Mineração de
+Dados.
 
-## Estrutura
+## Status
+
+**ETL parcial.** A extração, a validação básica e a transformação para
+`INSERTs` já estão implementadas. Ainda falta validar e executar a carga em um
+Oracle real, além de concluir os testes e os ajustes finais do modelo.
+
+## Arquitetura
 
 ```text
-DarkAumigos/
-├── main.py                  # Ponto de entrada
-├── requirements.txt         # Dependências Python
-├── .env.example             # Modelo de configuração
-├── README.md
-└── src/
-    ├── cli.py               # Interface de linha de comando
-    ├── config.py            # Configurações compartilhadas
-    ├── utilitarios.py       # Funções auxiliares
-    ├── leitores/
-    │   ├── dados.py         # Seleção/orquestração das fontes
-    │   ├── json.py          # Leitura de JSON
-    │   ├── mongo.py         # Leitura do MongoDB Atlas
-    │   └── postgresql.py    # PostgreSQL/Supabase -> Oracle
-    ├── transformacoes/      # Transformações das dimensões e fatos
-    ├── validacao/           # Validações de chaves
-    └── sql/                 # Geração do SQL Oracle
+main.py                         # Ponto de entrada compatível
+src/
+├── cli.py                      # Argumentos, execução e mensagens da CLI
+├── config.py                   # Variáveis de ambiente e constantes
+├── utilitarios.py              # Formatação SQL, datas e documentos
+├── leitores/
+│   ├── dados.py                # Escolha da fonte e orquestração da leitura
+│   ├── json.py                 # Leitura de arquivos JSON locais
+│   └── mongo.py                # Leitura das coleções do MongoDB Atlas
+│   └── postgresql.py           # PostgreSQL/Supabase -> Oracle (opcional)
+├── transformacoes/
+│   ├── cliente.py              # DIM_Cliente
+│   ├── concorrente.py           # FATO_Concorrente
+│   ├── filial.py               # DIM_Filial padrão
+│   ├── mapas.py                # Códigos de categoria e estado civil
+│   ├── produto.py              # DIM_Produto
+│   ├── tempo.py                # DIM_Tempo
+│   └── venda.py                # FATO_Venda
+├── validacao/
+│   └── chaves.py               # Referências de clientes e produtos
+└── sql/
+	 └── gerador.py              # Montagem ordenada do arquivo SQL
 ```
 
-O `postgresql.py` foi colocado em `src/leitores/`, junto aos demais módulos de
-entrada, em vez de ficar na raiz do projeto. As credenciais não ficam mais
-hardcoded: são carregadas por variáveis de ambiente.
+Os módulos relacionados às tabelas usam nomes em português para facilitar a
+divisão do trabalho e a comunicação do grupo.
 
-## Instalação
+## Requisitos
+
+- Python 3.10 ou superior
+- Acesso ao MongoDB Atlas ou arquivos JSON locais
+- Oracle para executar o SQL gerado
+
+Também é possível extrair de PostgreSQL/Supabase quando configurado via
+variáveis de ambiente (veja seção de exemplo de `.env` abaixo).
+
+Instale as dependências:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Copie `.env.example` para `.env` e preencha as credenciais.
-
-> **Importante:** nunca faça commit do `.env` ou de senhas reais.
-
-## MongoDB Atlas
-
-```bash
-python main.py
-```
-
-Ou usando JSON local:
-
-```bash
-python main.py --json-dir ./dados --output ./output/carga_oracle.sql
-```
-
-## PostgreSQL / Supabase
-
-O módulo PostgreSQL pode ser usado diretamente:
-
-```python
-from src.leitores.postgresql import salvar_sql_postgresql
-
-salvar_sql_postgresql("./output/carga_oracle_itabuna.sql")
-```
-
-Também é possível gerar a string SQL sem criar o arquivo:
-
-```python
-from src.leitores.postgresql import gerar_sql_postgresql
-
-sql = gerar_sql_postgresql()
-```
-
-### Variáveis necessárias
+Para usar o Atlas, copie `.env.example` para `.env` e preencha:
 
 ```env
+MONGODB_URI="mongodb+srv://..."
+MONGODB_DB="DarkAumigos"
+OUTPUT_SQL="carga_oracle.sql"
+# Opcional: PostgreSQL / Supabase
 POSTGRES_HOST="db.seu-projeto.supabase.co"
 POSTGRES_PORT="5432"
 POSTGRES_DB="postgres"
@@ -80,23 +70,132 @@ POSTGRES_PASSWORD="sua_senha"
 POSTGRES_SSLMODE="require"
 ```
 
-## Melhorias aplicadas ao `postgresql.py`
+O arquivo `.env` não deve ser versionado.
 
-- Movido para `src/leitores/postgresql.py`.
-- Removidas credenciais e configurações sensíveis do código.
+## Utilização
+
+Com MongoDB Atlas configurado:
+
+```bash
+python main.py
+```
+
+Sem conexão com o banco, crie uma pasta com os arquivos:
+
+```text
+dados/
+├── 05_Feira_Clientes.json
+├── 06_Feira_Produtos.json
+├── 07_Feira_Pedidos.json
+└── 08_Feira_concorrentes.json  # opcional
+```
+
+Execute:
+
+```bash
+python main.py --json-dir ./dados --output ./output/carga_oracle.sql
+```
+
+Para extrair do PostgreSQL/Supabase e gerar o arquivo SQL (garanta as
+variáveis `POSTGRES_*` preenchidas):
+
+```bash
+python main.py --postgresql
+```
+
+Ou usar as funções do módulo diretamente em um script Python:
+
+```python
+from src.leitores.postgresql import salvar_sql_postgresql
+
+salvar_sql_postgresql("./output/carga_oracle_itabuna.sql")
+```
+
+O arquivo gerado contém os `INSERTs` na ordem das chaves estrangeiras e um
+`COMMIT` ao final. A coleção de concorrentes é opcional.
+
+## Próximos passos do ETL
+
+1. **Validar o contrato dos dados:** conferir nomes, tipos, campos obrigatórios
+	 e datas das coleções reais contra o DDL Oracle.
+	- Status: Parcial — existe `src/validacao/chaves.py` para checagens básicas,
+	  mas a validação completa contra o DDL Oracle não foi automatizada.
+
+2. **Validar o SQL no Oracle:** executar o arquivo em um ambiente de teste e
+	 corrigir diferenças entre o DDL e os documentos de origem.
+	- Status: Parcial — o gerador de SQL (`src/sql/gerador.py`) cria o script;
+	  foi adicionado um loader inicial (`src/sql/loader.py`), porém exige testes
+	  práticos, tratamento de blocos PL/SQL e verificação de dependências do
+	  cliente Oracle (Instant Client) antes da homologação.
+
+3. **Concluir a carga (idempotência e estratégia):** definir se a execução
+	 será manual ou automatizada, e implementar proteção contra duplicação de
+	 dimensões/fatos em reexecuções.
+	- Status: Pendente — geração de INSERTs está pronta; políticas de deduplicação
+	  e reexecução devem ser definidas e implementadas.
+
+4. **Completar concorrentes:** confirmar os campos da coleção e sua relação
+	 com `FATO_Concorrente`.
+	- Status: Parcial — existe `src/transformacoes/concorrente.py`, mas os campos
+	  e o mapeamento devem ser validados com os dados reais.
+
+5. **Adicionar testes:** testar leitores, mapeamentos e validações.
+	- Status: Pendente (não essencial para entrega imediata; recomendado).
+
+6. **Documentar o DDL e o processo:** registrar o esquema Oracle, responsáveis
+	 por cada componente e o procedimento de homologação.
+	- Status: Pendente — documentação do DDL e do processo de carga precisa ser
+	  completada.
+
+---
+
+Pendências técnicas essenciais para a carga Oracle (novas / re-priorizadas):
+
+- **Testar a conexão Oracle com `oracledb`** e verificar credenciais/DSN.
+- **Tratar corretamente PL/SQL e blocos contendo `;`** (o parser atual é
+  ingênuo e pode quebrar blocos PL/SQL ou scripts que dependam de `;`).
+- **Melhorar logging e tratamento de erros/rollback** no loader (relatórios,
+  retries e mensagens úteis em falhas).
+- **Adicionar opções CLI úteis para execução no Oracle:** `--dry-run`,
+  `--load-oracle --retry N` e timeout configurável.
+- **Verificar e documentar requisitos do cliente Oracle (Instant Client)** e
+  privilégios necessários no usuário Oracle para executar os INSERTs/COMMIT.
+- **Implementar execução em lotes/bulk** (usar `executemany` ou estratégias de
+  batching) para suportar grandes volumes sem consumir muita memória.
+
+Notas:
+- O loader inicial foi adicionado em `src/sql/loader.py`, e facilita testes
+  locais, mas ainda falta robustez (parsing, logging, batched execution).
+- Os testes unitários/integration são desejáveis, mas não foram adicionados aqui
+  conforme sua orientação; foquei nas pendências operacionais essenciais.
+
+## Observações sobre o leitor PostgreSQL
+
+O projeto passou a incluir suporte a PostgreSQL/Supabase via
+`src/leitores/postgresql.py`. As principais melhorias aplicadas a esse módulo
+incluem:
+
+- Removido hardcoding de credenciais; uso exclusivo de variáveis de ambiente.
 - Conexão centralizada e encerrada corretamente.
 - Funções internas separadas por responsabilidade.
 - Validação de identificadores SQL.
-- Conversão de tipos Python -> Oracle concentrada em uma função.
+- Conversão de tipos Python -> Oracle concentrada em uma função utilitária.
 - Uso de `with` para o cursor.
-- Remoção de imports e variáveis sem utilização.
-- Geração do SQL desacoplada da gravação do arquivo.
-- Caminho de saída configurável.
-- Dependência alterada para `psycopg2-binary`, mais simples de instalar em ambientes de desenvolvimento.
+- Geração do SQL desacoplada da gravação do arquivo e caminho de saída
+	configurável.
+- Dependência sugerida: `psycopg2-binary` para facilitar instalação.
 
-## Observação sobre `FATO_Venda`
+### Observação sobre `FATO_Venda`
 
-O PostgreSQL possui itens de venda, enquanto o modelo Oracle utiliza `ID_Venda`
-como chave do fato. Nesta implementação, `id_item` é utilizado como
-`ID_Venda` para manter uma chave única por linha do fato. Essa decisão deve ser
-confirmada contra o DDL Oracle antes da carga definitiva.
+No leitor PostgreSQL os itens de venda existem como `itens_venda`, enquanto o
+modelo destino Oracle utiliza `ID_Venda` como chave do fato. Nesta implementação
+`id_item` foi usado como `ID_Venda` para garantir unicidade por linha do fato.
+Essa decisão deve ser confirmada contra o DDL Oracle antes da carga final.
+
+## Divisão sugerida do grupo
+
+- **Pessoa 1:** configuração, CLI e documentação.
+- **Pessoa 2:** leitores JSON e MongoDB.
+- **Pessoa 3:** dimensões e mapeamentos.
+- **Pessoa 4:** fatos de venda e concorrente.
+- **Pessoa 5:** validação, testes e homologação no Oracle.
