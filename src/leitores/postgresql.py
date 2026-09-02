@@ -1,276 +1,591 @@
-"""Leitura do PostgreSQL/Supabase e geração de carga Oracle.
-
-Este módulo mantém a origem PostgreSQL separada dos demais leitores da pipeline.
-As credenciais são obtidas exclusivamente por variáveis de ambiente.
-"""
-
-from __future__ import annotations
-
 import os
 import re
-from datetime import date
+import hashlib
 from decimal import Decimal
-from pathlib import Path
-from typing import Any
-
+from datetime import date
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+from pathlib import Path
 
 
-SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BASE_DIR / ".env")
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+
+# Dados de conexão do PostgreSQL/Supabase
+DB_HOST = os.getenv("POSTGRES_HOST")
+DB_PORT = os.getenv("POSTGRES_PORT")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+
+# Arquivo SQL de saída
+ARQUIVO_SAIDA = "insert_oracle_itabuna.sql"
 
 
-def _env(nome: str, padrao: str | None = None) -> str | None:
-    valor = os.getenv(nome, padrao)
-    return valor.strip() if valor else valor
-
+# ============================================================
+# CONEXÃO
+# ============================================================
 
 def conectar_postgresql():
-    """Abre uma conexão SSL com PostgreSQL/Supabase usando o ambiente."""
-    host = _env("POSTGRES_HOST")
-    if not host:
-        raise RuntimeError("Defina POSTGRES_HOST no arquivo .env.")
+    print("Conectando ao PostgreSQL/Supabase...")
 
-    return psycopg2.connect(
-        host=host,
-        port=_env("POSTGRES_PORT", "5432"),
-        dbname=_env("POSTGRES_DB", "postgres"),
-        user=_env("POSTGRES_USER", "postgres"),
-        password=_env("POSTGRES_PASSWORD"),
-        sslmode=_env("POSTGRES_SSLMODE", "require"),
+    conexao = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        sslmode="require"
     )
 
+    print("Conexão realizada com sucesso!")
 
-def _nome_seguro(nome: str) -> str:
-    if not SQL_IDENTIFIER.fullmatch(nome):
-        raise ValueError(f"Identificador SQL inválido: {nome}")
+    return conexao
+
+
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
+
+def escapar_string(valor):
+    """
+    Escapa strings para utilização em SQL Oracle.
+    """
+    if valor is None:
+        return "NULL"
+
+    valor = str(valor)
+
+    # Oracle utiliza duas aspas simples para representar
+    # uma aspa simples dentro de uma string.
+    valor = valor.replace("'", "''")
+
+    return f"'{valor}'"
+
+
+def valor_sql(valor):
+    """
+    Converte valores Python para valores SQL Oracle.
+    """
+
+    if valor is None:
+        return "NULL"
+
+    if isinstance(valor, bool):
+        return "1" if valor else "0"
+
+    if isinstance(valor, Decimal):
+        return str(valor)
+
+    if isinstance(valor, (int, float)):
+        return str(valor)
+
+    if isinstance(valor, date):
+        return f"TO_DATE('{valor.strftime('%Y-%m-%d')}', 'YYYY-MM-DD')"
+
+    return escapar_string(valor)
+
+
+def nome_seguro(nome):
+    """
+    Garante que o nome da tabela/coluna utilizado
+    no SQL seja seguro.
+    """
+
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", nome):
+        raise ValueError(f"Nome SQL inválido: {nome}")
+
     return nome
 
 
-def _valor_sql(valor: Any) -> str:
-    """Converte um valor Python para uma expressão SQL compatível com Oracle."""
-    if valor is None:
-        return "NULL"
-    if isinstance(valor, bool):
-        return "1" if valor else "0"
-    if isinstance(valor, Decimal):
-        return str(valor)
-    if isinstance(valor, (int, float)):
-        return str(valor)
-    if isinstance(valor, date):
-        return f"TO_DATE('{valor:%Y-%m-%d}', 'YYYY-MM-DD')"
+def gerar_insert(tabela, colunas, valores):
+    """
+    Gera um INSERT Oracle.
+    """
 
-    texto = str(valor).replace("'", "''")
-    return f"'{texto}'"
+    tabela = nome_seguro(tabela)
 
+    colunas = [
+        nome_seguro(coluna)
+        for coluna in colunas
+    ]
 
-def gerar_insert(tabela: str, colunas: list[str], valores: list[Any]) -> str:
-    """Monta um INSERT Oracle validando tabela e colunas."""
-    if len(colunas) != len(valores):
-        raise ValueError("Quantidade de colunas e valores deve ser igual.")
-
-    tabela = _nome_seguro(tabela)
-    colunas = [_nome_seguro(coluna) for coluna in colunas]
-    valores_sql = [_valor_sql(valor) for valor in valores]
+    valores_convertidos = [
+        valor_sql(valor)
+        for valor in valores
+    ]
 
     return (
-        f"INSERT INTO {tabela} ({', '.join(colunas)}) "
-        f"VALUES ({', '.join(valores_sql)});"
+        f"INSERT INTO {tabela} "
+        f"({', '.join(colunas)}) "
+        f"VALUES ({', '.join(valores_convertidos)});"
     )
 
 
-def _consultar(cursor, sql: str):
+# ============================================================
+# CONSULTA GENÉRICA
+# ============================================================
+
+def consultar(cursor, sql):
     cursor.execute(sql)
+
     return cursor.fetchall()
 
 
-def _gerar_dim_produto(cursor, inserts: list[str]) -> None:
-    produtos = _consultar(
+# ============================================================
+# DIM_PRODUTO
+# ============================================================
+
+def gerar_dim_produto(cursor, inserts):
+    print("Gerando DIM_Produto...")
+
+    produtos = consultar(
         cursor,
         """
-        SELECT id_produto, categoria, preco
+        SELECT
+            id_produto,
+            categoria,
+            preco
         FROM produtos
         ORDER BY id_produto
-        """,
+        """
     )
-    categorias: dict[str, int] = {}
+
+    # Mapeamento:
+    # categoria textual -> código numérico
+    categorias = {}
+
+    proximo_id_categoria = 1
 
     for produto in produtos:
+
         categoria = produto["categoria"]
-        if categoria is not None:
+
+        if categoria is None:
+            categoria_id = None
+
+        else:
             categoria = categoria.strip()
-            categorias.setdefault(categoria, len(categorias) + 1)
+
+            if categoria not in categorias:
+                categorias[categoria] = proximo_id_categoria
+                proximo_id_categoria += 1
+
+            categoria_id = categorias[categoria]
 
         inserts.append(
             gerar_insert(
                 "DIM_Produto",
-                ["ID_Produto", "Categoria", "Valor"],
+                [
+                    "ID_Produto",
+                    "Categoria",
+                    "Valor"
+                ],
                 [
                     produto["id_produto"],
-                    categorias.get(categoria) if categoria else None,
-                    produto["preco"],
-                ],
+                    categoria_id,
+                    produto["preco"]
+                ]
             )
         )
 
-    print(f"  DIM_Produto: {len(produtos)} registros.")
+    print(f"  {len(produtos)} produtos processados.")
+
+    return categorias
 
 
-def _gerar_dim_cliente(cursor, inserts: list[str]) -> None:
-    clientes = _consultar(
+# ============================================================
+# DIM_CLIENTE
+# ============================================================
+
+def gerar_dim_cliente(cursor, inserts):
+    print("Gerando DIM_Cliente...")
+
+    clientes = consultar(
         cursor,
         """
-        SELECT id_cliente, estado_civil
+        SELECT
+            id_cliente,
+            estado_civil
         FROM clientes
         ORDER BY id_cliente
-        """,
+        """
     )
-    estados_civis: dict[str, int] = {}
+
+    estados_civis = {}
+
+    proximo_id = 1
 
     for cliente in clientes:
+
         estado = cliente["estado_civil"]
-        if estado is not None:
+
+        if estado is None:
+            estado_id = None
+
+        else:
             estado = estado.strip().upper()
-            estados_civis.setdefault(estado, len(estados_civis) + 1)
+
+            if estado not in estados_civis:
+                estados_civis[estado] = proximo_id
+                proximo_id += 1
+
+            estado_id = estados_civis[estado]
 
         inserts.append(
             gerar_insert(
                 "DIM_Cliente",
-                ["ID_Cliente", "Estado_Civil"],
-                [cliente["id_cliente"], estados_civis.get(estado) if estado else None],
+                [
+                    "ID_Cliente",
+                    "Estado_Civil"
+                ],
+                [
+                    cliente["id_cliente"],
+                    estado_id
+                ]
             )
         )
 
-    print(f"  DIM_Cliente: {len(clientes)} registros.")
+    print(f"  {len(clientes)} clientes processados.")
+
+    return estados_civis
 
 
-def _gerar_dim_tempo(cursor, inserts: list[str]) -> None:
-    datas = _consultar(
+# ============================================================
+# DIM_TEMPO
+# ============================================================
+
+def gerar_dim_tempo(cursor, inserts):
+    print("Gerando DIM_Tempo...")
+
+    datas = consultar(
         cursor,
         """
-        SELECT DISTINCT data_venda
+        SELECT DISTINCT
+            data_venda
         FROM vendas
         WHERE data_venda IS NOT NULL
         ORDER BY data_venda
-        """,
+        """
     )
 
     for registro in datas:
+
         data_venda = registro["data_venda"]
+
+        # ID no formato YYYYMMDD
+        id_data = int(data_venda.strftime("%Y%m%d"))
+
+        ano = data_venda.year
+
+        # Quadrimestre:
+        # Janeiro-Abril = 1
+        # Maio-Agosto = 2
+        # Setembro-Dezembro = 3
+        quadrimestre = ((data_venda.month - 1) // 4) + 1
+
         inserts.append(
             gerar_insert(
                 "DIM_Tempo",
-                ["ID_Data", "Ano", "Quadrimestre"],
                 [
-                    int(data_venda.strftime("%Y%m%d")),
-                    data_venda.year,
-                    ((data_venda.month - 1) // 4) + 1,
+                    "ID_Data",
+                    "Ano",
+                    "Quadrimestre"
                 ],
+                [
+                    id_data,
+                    ano,
+                    quadrimestre
+                ]
             )
         )
 
-    print(f"  DIM_Tempo: {len(datas)} registros.")
+    print(f"  {len(datas)} datas processadas.")
 
 
-def _gerar_dim_filial(inserts: list[str]) -> None:
+# ============================================================
+# DIM_FILIAL
+# ============================================================
+
+def gerar_dim_filial(inserts):
+    print("Gerando DIM_Filial...")
+
+    # O banco PostgreSQL fornecido não possui uma tabela
+    # de filiais.
+    #
+    # Portanto, todos os registros serão associados
+    # à filial padrão Itabuna.
+
     inserts.append(
         gerar_insert(
             "DIM_Filial",
-            ["ID_Filial", "Nome", "Cidade"],
-            [1, "Filial Itabuna", "Itabuna"],
+            [
+                "ID_Filial",
+                "Nome",
+                "Cidade"
+            ],
+            [
+                1,
+                "Filial Itabuna",
+                "Itabuna"
+            ]
         )
     )
-    print("  DIM_Filial: 1 registro padrão.")
+
+    print("  Filial padrão 'Itabuna' criada.")
 
 
-def _gerar_fato_venda(cursor, inserts: list[str]) -> None:
-    vendas = _consultar(
+# ============================================================
+# FATO_VENDA
+# ============================================================
+
+def gerar_fato_venda(cursor, inserts):
+    print("Gerando FATO_Venda...")
+
+    vendas = consultar(
         cursor,
         """
         SELECT
             iv.id_item,
+            iv.id_venda,
             v.id_cliente,
             v.data_venda,
             iv.id_produto,
             iv.quantidade,
             iv.valor_unitario
         FROM itens_venda iv
-        INNER JOIN vendas v ON v.id_venda = iv.id_venda
+        INNER JOIN vendas v
+            ON v.id_venda = iv.id_venda
         ORDER BY iv.id_item
-        """,
+        """
     )
 
     for venda in vendas:
+
+        id_item = venda["id_item"]
+
+        id_cliente = venda["id_cliente"]
+
         data_venda = venda["data_venda"]
-        quantidade = venda["quantidade"]
-        valor_unitario = venda["valor_unitario"]
-        valor = (
-            Decimal(quantidade) * valor_unitario
-            if quantidade is not None and valor_unitario is not None
-            else None
+
+        id_data = int(
+            data_venda.strftime("%Y%m%d")
         )
+
+        id_produto = venda["id_produto"]
+
+        quantidade = venda["quantidade"]
+
+        valor_unitario = venda["valor_unitario"]
+
+        # Valor total do item
+        if quantidade is not None and valor_unitario is not None:
+            valor = Decimal(quantidade) * valor_unitario
+        else:
+            valor = None
+
+        # ----------------------------------------------------
+        # IMPORTANTE
+        # ----------------------------------------------------
+        # No modelo Oracle, FATO_Venda possui ID_Venda como
+        # chave primária.
+        #
+        # Porém, no PostgreSQL uma venda pode possuir vários
+        # itens.
+        #
+        # Portanto utilizamos ID_ITEM como ID_Venda no fato,
+        # fazendo com que cada registro represente um item
+        # vendido.
+        # ----------------------------------------------------
 
         inserts.append(
             gerar_insert(
                 "FATO_Venda",
                 [
-                    "ID_Venda", "ID_Produto", "ID_Data", "ID_Cliente",
-                    "ID_Filial", "Quantidade", "Valor",
+                    "ID_Venda",
+                    "ID_Produto",
+                    "ID_Data",
+                    "ID_Cliente",
+                    "ID_Filial",
+                    "Quantidade",
+                    "Valor"
                 ],
                 [
-                    venda["id_item"],
-                    venda["id_produto"],
-                    int(data_venda.strftime("%Y%m%d")),
-                    venda["id_cliente"],
+                    id_item,
+                    id_produto,
+                    id_data,
+                    id_cliente,
                     1,
                     quantidade,
-                    valor,
-                ],
+                    valor
+                ]
             )
         )
 
-    print(f"  FATO_Venda: {len(vendas)} itens.")
+    print(f"  {len(vendas)} itens de venda processados.")
 
 
-def gerar_sql_postgresql() -> str:
-    """Extrai o PostgreSQL e devolve o SQL Oracle completo em memória."""
-    inserts: list[str] = []
+# ============================================================
+# FATO_CONCORRENTE
+# ============================================================
+
+def gerar_fato_concorrente(inserts):
+    print("Gerando FATO_Concorrente...")
+
+    # Não existe tabela de concorrentes no DDL PostgreSQL.
+    #
+    # Portanto não existem dados de origem para preencher
+    # esta tabela.
+
+    inserts.append(
+        "-- FATO_Concorrente: sem dados disponíveis no PostgreSQL."
+    )
+
+    print("  Nenhum registro criado.")
+
+
+# ============================================================
+# CRIAÇÃO DO ARQUIVO
+# ============================================================
+
+def salvar_sql(inserts):
+    print()
+    print(f"Salvando arquivo: {ARQUIVO_SAIDA}")
+
+    with open(
+        ARQUIVO_SAIDA,
+        "w",
+        encoding="utf-8"
+    ) as arquivo:
+
+        arquivo.write(
+            "-- =====================================================\n"
+        )
+        arquivo.write(
+            "-- INSERTS GERADOS A PARTIR DO POSTGRESQL/SUPABASE\n"
+        )
+        arquivo.write(
+            "-- Banco origem: Itabuna\n"
+        )
+        arquivo.write(
+            "-- Banco destino: Oracle\n"
+        )
+        arquivo.write(
+            "-- =====================================================\n\n"
+        )
+
+        # ----------------------------------------------------
+        # DIMENSÕES
+        # ----------------------------------------------------
+
+        arquivo.write(
+            "-- =====================================================\n"
+        )
+        arquivo.write(
+            "-- DIMENSÕES\n"
+        )
+        arquivo.write(
+            "-- =====================================================\n\n"
+        )
+
+        for insert in inserts:
+
+            # Coloca os INSERTs diretamente na ordem em que
+            # foram gerados.
+            arquivo.write(insert)
+            arquivo.write("\n")
+
+        arquivo.write("\nCOMMIT;\n")
+
+    print("Arquivo SQL criado com sucesso!")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
     conexao = None
 
     try:
-        print("Conectando ao PostgreSQL/Supabase...")
+
         conexao = conectar_postgresql()
-        print("Conexão realizada com sucesso!")
 
-        with conexao.cursor(cursor_factory=RealDictCursor) as cursor:
-            _gerar_dim_produto(cursor, inserts)
-            _gerar_dim_cliente(cursor, inserts)
-            _gerar_dim_tempo(cursor, inserts)
-            _gerar_dim_filial(inserts)
-            _gerar_fato_venda(cursor, inserts)
-
-        return "\n".join(
-            [
-                "-- ============================================================",
-                "-- CARGA POSTGRESQL/SUPABASE -> ORACLE",
-                "-- Banco origem: PostgreSQL",
-                "-- Banco destino: Oracle",
-                "-- ============================================================",
-                "",
-                *inserts,
-                "",
-                "COMMIT;",
-            ]
+        cursor = conexao.cursor(
+            cursor_factory=RealDictCursor
         )
+
+        inserts = []
+
+        # ----------------------------------------------------
+        # 1. DIMENSÕES
+        # ----------------------------------------------------
+
+        gerar_dim_produto(
+            cursor,
+            inserts
+        )
+
+        gerar_dim_cliente(
+            cursor,
+            inserts
+        )
+
+        gerar_dim_tempo(
+            cursor,
+            inserts
+        )
+
+        gerar_dim_filial(
+            inserts
+        )
+
+        # ----------------------------------------------------
+        # 2. FATOS
+        # ----------------------------------------------------
+
+        gerar_fato_venda(
+            cursor,
+            inserts
+        )
+
+        gerar_fato_concorrente(
+            inserts
+        )
+
+        # ----------------------------------------------------
+        # 3. SALVAR ARQUIVO
+        # ----------------------------------------------------
+
+        salvar_sql(inserts)
+
+        cursor.close()
+
+    except Exception as erro:
+
+        print()
+        print("ERRO:")
+        print(erro)
+
+        raise
+
     finally:
+
         if conexao is not None:
             conexao.close()
             print("Conexão encerrada.")
 
 
-def salvar_sql_postgresql(caminho: str | Path) -> Path:
-    """Gera e salva a carga Oracle em arquivo."""
-    destino = Path(caminho)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_text(gerar_sql_postgresql(), encoding="utf-8")
-    return destino
+# ============================================================
+# EXECUÇÃO
+# ============================================================
+
+if __name__ == "__main__":
+    main()
