@@ -47,6 +47,8 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 load_dotenv(BASE_DIR / ".env")
 
 
@@ -296,8 +298,8 @@ def gerar_dim_produto(dados, arquivo):
 
     for id_produto, nome, preco, id_categoria in dados["produtos"]:
         arquivo.write(
-            "INSERT INTO DIM_Produto "
-            "(ID_Produto, Categoria, Valor) VALUES "
+            "INSERT INTO DIM_PRODUTO "
+            "(ID_PRODUTO, CATEGORIA, VALOR) VALUES "
             f"({sql_number(id_produto)}, "
             f"{sql_number(id_categoria)}, "
             f"{sql_number(preco)});\n"
@@ -313,8 +315,8 @@ def gerar_dim_cliente(dados, arquivo):
         estado = map_estado_civil(estado_civil)
 
         arquivo.write(
-            "INSERT INTO DIM_Cliente "
-            "(ID_Cliente, Estado_Civil) VALUES "
+            "INSERT INTO DIM_CLIENTE "
+            "(ID_CLIENTE, ESTADO_CIVIL) VALUES "
             f"({sql_number(id_cliente)}, "
             f"{sql_number(estado)});\n"
         )
@@ -326,8 +328,8 @@ def gerar_dim_filial(arquivo):
     arquivo.write("-- ====================================================\n")
 
     arquivo.write(
-        "INSERT INTO DIM_Filial "
-        "(ID_Filial, Nome, Cidade) VALUES "
+        "INSERT INTO DIM_FILIAL "
+        "(ID_FILIAL, NOME, CIDADE) VALUES "
         f"({ID_FILIAL_SALVADOR}, "
         f"{sql_string(NOME_FILIAL)}, "
         f"{sql_string(CIDADE_FILIAL)});\n"
@@ -355,8 +357,8 @@ def gerar_dim_tempo(dados, arquivo):
         ano, quad = datas[id_data_value]
 
         arquivo.write(
-            "INSERT INTO DIM_Tempo "
-            "(ID_Data, Ano, Quadrimestre) VALUES "
+            "INSERT INTO DIM_TEMPO "
+            "(ID_DATA, ANO, QUADRIMESTRE) VALUES "
             f"({id_data_value}, {ano}, {quad});\n"
         )
 
@@ -416,9 +418,9 @@ def gerar_fato_venda(dados, arquivo):
         id_data_value = id_data(data_venda)
 
         arquivo.write(
-            "INSERT INTO FATO_Venda "
-            "(ID_Venda, ID_Produto, ID_Data, ID_Cliente, "
-            "ID_Filial, Quantidade, Valor) VALUES "
+            "INSERT INTO FATO_VENDA "
+            "(ID_VENDA, ID_PRODUTO, ID_DATA, ID_CLIENTE, "
+            "ID_FILIAL, QUANTIDADE, VALOR) VALUES "
             f"({sql_number(id_venda)}, "
             f"{sql_number(venda['id_produto'])}, "
             f"{sql_number(id_data_value)}, "
@@ -430,35 +432,10 @@ def gerar_fato_venda(dados, arquivo):
 
 
 def gerar_script(dados, output_file):
+    from src.sql.gerador import gerar_sql_oracle
+
     caminho = Path(output_file)
-
-    with caminho.open("w", encoding="utf-8") as arquivo:
-        arquivo.write("-- ====================================================\n")
-        arquivo.write("-- MIGRAÇÃO ORACLE -> ORACLE\n")
-        arquivo.write("-- Origem: Loja Salvador\n")
-        arquivo.write("-- Destino: Modelo OLAP\n")
-        arquivo.write("-- ====================================================\n\n")
-
-        arquivo.write("SET DEFINE OFF;\n")
-        arquivo.write("ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD';\n")
-
-        gerar_dim_produto(dados, arquivo)
-        gerar_dim_tempo(dados, arquivo)
-        gerar_dim_cliente(dados, arquivo)
-        gerar_dim_filial(arquivo)
-        gerar_fato_venda(dados, arquivo)
-
-        arquivo.write("\n-- ====================================================\n")
-        arquivo.write("-- FATO_CONCORRENTE\n")
-        arquivo.write("-- ====================================================\n")
-        arquivo.write(
-            "-- Não há tabela equivalente no DDL de origem; "
-            "nenhum INSERT foi gerado.\n"
-        )
-
-        arquivo.write("\nCOMMIT;\n")
-        arquivo.write("SET DEFINE ON;\n")
-
+    caminho.write_text(gerar_sql_oracle(dados), encoding="utf-8")
     return caminho
 
 

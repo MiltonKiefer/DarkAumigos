@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import sys
 from decimal import Decimal
 from datetime import date
 import psycopg2
@@ -11,6 +12,8 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 load_dotenv(BASE_DIR / ".env")
 
 # ============================================================
@@ -47,6 +50,94 @@ def conectar_postgresql():
     print("Conexão realizada com sucesso!")
 
     return conexao
+
+
+def carregar_dados_postgresql() -> dict[str, list[dict]]:
+    """Extrai o PostgreSQL no mesmo contrato usado por JSON e MongoDB."""
+    from src.config import POSTGRES_SSLMODE
+
+    configuracao = {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "database": DB_NAME,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "sslmode": POSTGRES_SSLMODE,
+    }
+    if not all(configuracao[chave] for chave in ("host", "database", "user", "password")):
+        raise RuntimeError(
+            "Defina POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER e POSTGRES_PASSWORD."
+        )
+
+    conexao = psycopg2.connect(**configuracao)
+    try:
+        with conexao.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT id_cliente, estado_civil
+                FROM clientes
+                ORDER BY id_cliente
+                """
+            )
+            clientes = [dict(registro) for registro in cursor.fetchall()]
+
+            cursor.execute(
+                """
+                SELECT p.id_produto, COALESCE(c.nome_categoria, p.categoria) AS categoria,
+                       p.preco
+                FROM produtos p
+                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+                ORDER BY p.id_produto
+                """
+            )
+            produtos = [dict(registro) for registro in cursor.fetchall()]
+
+            cursor.execute(
+                """
+                SELECT v.id_venda, v.id_cliente, v.data_venda,
+                       i.id_produto, i.quantidade, i.valor_unitario
+                FROM vendas v
+                INNER JOIN itens_venda i ON i.id_venda = v.id_venda
+                ORDER BY v.id_venda, i.id_item
+                """
+            )
+            pedidos_por_id: dict[int, dict] = {}
+            for registro in cursor.fetchall():
+                registro = dict(registro)
+                id_pedido = int(registro["id_venda"])
+                pedido = pedidos_por_id.setdefault(
+                    id_pedido,
+                    {
+                        "id_pedido": id_pedido,
+                        "id_cliente": registro["id_cliente"],
+                        "data_pedido": registro["data_venda"],
+                        "itens": [],
+                    },
+                )
+                pedido["itens"].append({
+                    "id_produto": registro["id_produto"],
+                    "quantidade": registro["quantidade"],
+                    "preco_unitario": registro["valor_unitario"],
+                })
+        return {
+            "clientes": clientes,
+            "produtos": produtos,
+            "pedidos": list(pedidos_por_id.values()),
+            "concorrentes": [],
+        }
+    finally:
+        conexao.close()
+
+
+def salvar_sql_postgresql(caminho_saida: str) -> str:
+    """Gera o SQL PostgreSQL usando exatamente o gerador comum da pipeline."""
+    from pathlib import Path
+    from src.sql.gerador import gerar_sql
+
+    caminho = Path(caminho_saida)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(gerar_sql(carregar_dados_postgresql()), encoding="utf-8")
+    return str(caminho)
 
 
 # ============================================================
@@ -511,76 +602,8 @@ def salvar_sql(inserts):
 # ============================================================
 
 def main():
-
-    conexao = None
-
-    try:
-
-        conexao = conectar_postgresql()
-
-        cursor = conexao.cursor(
-            cursor_factory=RealDictCursor
-        )
-
-        inserts = []
-
-        # ----------------------------------------------------
-        # 1. DIMENSÕES
-        # ----------------------------------------------------
-
-        gerar_dim_produto(
-            cursor,
-            inserts
-        )
-
-        gerar_dim_cliente(
-            cursor,
-            inserts
-        )
-
-        gerar_dim_tempo(
-            cursor,
-            inserts
-        )
-
-        gerar_dim_filial(
-            inserts
-        )
-
-        # ----------------------------------------------------
-        # 2. FATOS
-        # ----------------------------------------------------
-
-        gerar_fato_venda(
-            cursor,
-            inserts
-        )
-
-        gerar_fato_concorrente(
-            inserts
-        )
-
-        # ----------------------------------------------------
-        # 3. SALVAR ARQUIVO
-        # ----------------------------------------------------
-
-        salvar_sql(inserts)
-
-        cursor.close()
-
-    except Exception as erro:
-
-        print()
-        print("ERRO:")
-        print(erro)
-
-        raise
-
-    finally:
-
-        if conexao is not None:
-            conexao.close()
-            print("Conexão encerrada.")
+    caminho = salvar_sql_postgresql(ARQUIVO_SAIDA)
+    print(f"SQL PostgreSQL gerado: {Path(caminho).resolve()}")
 
 
 # ============================================================

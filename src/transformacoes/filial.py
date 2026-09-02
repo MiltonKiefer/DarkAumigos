@@ -6,8 +6,8 @@ from src.utilitarios import sql_string
 
 def criar_dim_filial() -> list[str]:
     return [
-        "-- DIM_Filial",
-        "INSERT INTO DIM_Filial (ID_Filial, Nome, Cidade) VALUES "
+        "-- DIM_FILIAL",
+        "INSERT INTO DIM_FILIAL (ID_FILIAL, NOME, CIDADE) VALUES "
         f"({DEFAULT_FILIAL_ID}, {sql_string(DEFAULT_FILIAL_NOME)}, "
         f"{sql_string(DEFAULT_FILIAL_CIDADE)});",
     ]

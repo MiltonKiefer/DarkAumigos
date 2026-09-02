@@ -33,10 +33,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.postgresql:
-        from src.leitores.postgresql import salvar_sql_postgresql
+        from src.leitores.postgresql import carregar_dados_postgresql
         from src.sql.loader import execute_file
 
-        caminho = salvar_sql_postgresql(args.output)
+        dados = carregar_dados_postgresql()
+        sql = gerar_sql(dados)
+        caminho = Path(args.output)
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(sql, encoding="utf-8")
         print(f"Conversão PostgreSQL concluída! SQL gerado: {caminho.resolve()}")
         if args.load_oracle:
             print("Executando carga no Oracle...")
