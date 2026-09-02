@@ -14,6 +14,7 @@ Oracle real, além de concluir os testes e os ajustes finais do modelo.
 
 ```text
 main.py                         # Ponto de entrada compatível
+script-olap/                    # Scripts do banco OLAP (referência apenas)
 src/
 ├── cli.py                      # Argumentos, execução e mensagens da CLI
 ├── config.py                   # Variáveis de ambiente e constantes
