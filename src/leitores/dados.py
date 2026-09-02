@@ -4,7 +4,7 @@ import argparse
 import os
 from pathlib import Path
 
-from src.leitores.json import carregar_json
+from src.leitores.json_reader import carregar_json
 from src.leitores.mongo import carregar_do_mongo
 
 

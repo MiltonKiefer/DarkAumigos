@@ -21,7 +21,7 @@ src/
 ├── utilitarios.py              # Formatação SQL, datas e documentos
 ├── leitores/
 │   ├── dados.py                # Escolha da fonte e orquestração da leitura
-│   ├── json.py                 # Leitura de arquivos JSON locais
+│   ├── json_reader.py                 # Leitura de arquivos JSON locais
 │   └── mongo.py                # Leitura das coleções do MongoDB Atlas
 │   └── postgresql.py           # PostgreSQL/Supabase -> Oracle (opcional)
 ├── transformacoes/
