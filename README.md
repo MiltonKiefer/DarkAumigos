@@ -115,6 +115,94 @@ salvar_sql_postgresql("./output/carga_oracle_itabuna.sql")
 O arquivo gerado contém os `INSERTs` na ordem das chaves estrangeiras e um
 `COMMIT` ao final. A coleção de concorrentes é opcional.
 
+## Leitor Excel - FATO_CONCORRENTE
+
+Foi adicionado um fluxo para leitura de dados de vendas de concorrentes a partir de
+um arquivo Excel e geração de `INSERTs` compatíveis com a tabela Oracle
+`FATO_CONCORRENTE`.
+
+### Estrutura de pastas
+
+O leitor Python fica em `src/leitores` e utiliza a raiz do projeto para localizar
+automaticamente as pastas `Dados` e `Output`:
+
+```text
+DarkAumigos/
+├── Dados/
+│   └── 08_Vendas_Concorrente.xlsx
+├── Output/
+│   └── insert_fato_concorrente.sql
+└── src/
+    └── leitores/
+        └── concorrente.py
+```
+
+O arquivo Excel é procurado automaticamente dentro da pasta `Dados`. Se houver
+mais de um arquivo `.xlsx`, o programa apresenta uma lista para que o usuário
+escolha qual arquivo deve ser utilizado.
+
+### Formato esperado do Excel
+
+O arquivo Excel deve possuir as seguintes colunas obrigatórias:
+
+- `Ano`
+- `Mês`
+- `Vendas (R$)`
+
+Os meses podem ser informados tanto de forma abreviada (`Jan`, `Fev`, `Mar`,
+etc.) quanto por extenso (`Janeiro`, `Fevereiro`, `Março`, etc.).
+
+### Geração dos INSERTs
+
+Os dados são convertidos para comandos SQL destinados à tabela
+`FATO_CONCORRENTE`, utilizando as colunas:
+
+```text
+ID_CONCORRENTE
+ID_DATA
+ANO
+MES
+DESCRICAO
+```
+
+O campo `Mês` do Excel é convertido para seu respectivo número. O valor de
+`Vendas (R$)` é convertido para um formato numérico compatível com Oracle.
+
+O `ID_CONCORRENTE` e o `ID_DATA` são gerados sequencialmente a partir de `1`,
+acompanhando a ordem dos registros da planilha.
+
+> **Atenção:** o `ID_DATA` precisa corresponder aos registros existentes na
+> `DIM_TEMPO`. A sequência automática (`1, 2, 3...`) somente é válida se os IDs
+> da dimensão estiverem organizados dessa mesma forma.
+
+### Arquivo de saída
+
+O arquivo SQL é gerado automaticamente na pasta `Output`:
+
+```text
+Output/insert_fato_concorrente.sql
+```
+
+A pasta `Output` também é criada automaticamente caso ainda não exista.
+
+Exemplo de `INSERT` gerado:
+
+```sql
+INSERT INTO FATO_CONCORRENTE
+(ID_CONCORRENTE, ID_DATA, ANO, MES, DESCRICAO)
+VALUES (1, 1, 2024, 1, 185000);
+```
+
+### Observação sobre `DESCRICAO`
+
+Na estrutura Oracle utilizada neste fluxo, `DESCRICAO` está definida como
+`NUMBER(15,2)`. Por isso, o código utiliza essa coluna para receber o valor de
+`Vendas (R$)` da planilha.
+
+Caso o modelo Oracle seja alterado para representar esse valor como `VENDAS`,
+o `INSERT` e o código Python deverão ser ajustados para utilizar o novo nome da
+coluna.
+
 ## Próximos passos do ETL
 
 1. **Validar o contrato dos dados:** conferir nomes, tipos, campos obrigatórios
