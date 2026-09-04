@@ -56,7 +56,7 @@ load_dotenv(BASE_DIR / ".env")
 # CONFIGURAÇÕES
 # ============================================================
 
-OUTPUT_FILE = "migracao_salvador.sql"
+OUTPUT_FILE = BASE_DIR / "output" / "migracao_salvador.sql"
 
 # A filial Salvador será representada no DW por este ID.
 ID_FILIAL_SALVADOR = 1

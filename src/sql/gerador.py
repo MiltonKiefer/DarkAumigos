@@ -1,6 +1,7 @@
 """Orquestra a geração da carga SQL."""
 
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from src.transformacoes.cliente import criar_dim_cliente
@@ -61,12 +62,17 @@ def _normalizar_dados(dados: dict[str, list[dict]]) -> dict[str, list[dict]]:
 
     for indice, cliente in enumerate(dados.get("clientes", []), 1):
         contexto = f"Cliente #{indice}"
+        estado_civil = _primeiro(cliente, "estado_civil", "estadoCivil")
+        if estado_civil is None or (
+            isinstance(estado_civil, str) and not estado_civil.strip()
+        ):
+            estado_civil = "Inexistente"
         resultado["clientes"].append({
             "id_cliente": _inteiro(
                 _primeiro(cliente, "id_cliente", "cliente_id"),
                 "id_cliente", contexto,
             ),
-            "estado_civil": _primeiro(cliente, "estado_civil", "estadoCivil"),
+            "estado_civil": estado_civil,
         })
 
     for indice, produto in enumerate(dados.get("produtos", []), 1):
@@ -116,13 +122,14 @@ def _normalizar_dados(dados: dict[str, list[dict]]) -> dict[str, list[dict]]:
         data = _primeiro(concorrente, "data", "data_pedido", "data_venda")
         resultado["concorrentes"].append({
             "data": _data_iso(data, f"Concorrente #{indice}: campo 'data'"),
+            "vendas": _primeiro(concorrente, "vendas", "valor", "descricao"),
         })
 
     return resultado
 
 
-def gerar_sql_oracle(dados: dict[str, list]) -> str:
-    """Converte o retorno de ``leitores.oracle.buscar_dados`` em carga OLAP."""
+def dados_oracle_para_contrato(dados: dict[str, list]) -> dict[str, list[dict]]:
+    """Converte o retorno de ``leitores.oracle.buscar_dados`` para o contrato comum."""
     categorias = {registro[0]: registro[1] for registro in dados.get("categorias", [])}
     produtos = [
         {
@@ -155,35 +162,17 @@ def gerar_sql_oracle(dados: dict[str, list]) -> str:
             "preco_unitario": preco,
         })
 
-    return _gerar_sql_com_mapas(
-        {
-            "clientes": clientes,
-            "produtos": produtos,
-            "pedidos": list(pedidos_por_id.values()),
-            "concorrentes": [],
-        },
-        {str(nome): indice for indice, nome in categorias.items()},
-        {
-            "S": 1,
-            "SOLTEIRO": 1,
-            "SOLTEIRA": 1,
-            "C": 2,
-            "CASADO": 2,
-            "CASADA": 2,
-            "D": 3,
-            "DIVORCIADO": 3,
-            "DIVORCIADA": 3,
-            "V": 4,
-            "VIUVO": 4,
-            "VIUVA": 4,
-            "O": 5,
-            "OUTRO": 5,
-            "OUTROS": 5,
-            "U": 6,
-            "UNIAO ESTAVEL": 6,
-            "UNIÃO ESTÁVEL": 6,
-        },
-    )
+    return {
+        "clientes": clientes,
+        "produtos": produtos,
+        "pedidos": list(pedidos_por_id.values()),
+        "concorrentes": [],
+    }
+
+
+def gerar_sql_oracle(dados: dict[str, list]) -> str:
+    """Converte o retorno do leitor Oracle e gera a carga OLAP."""
+    return _gerar_sql_com_mapas(dados_oracle_para_contrato(dados))
 
 
 def _gerar_sql_com_mapas(
@@ -208,7 +197,7 @@ def _gerar_sql_com_mapas(
     ]
     linhas.extend(criar_dim_produto(produtos, mapa_categorias))
     linhas.append("")
-    linhas.extend(criar_dim_tempo(pedidos))
+    linhas.extend(criar_dim_tempo(pedidos, concorrentes))
     linhas.append("")
     linhas.extend(criar_dim_cliente(clientes, mapa_estado_civil))
     linhas.append("")
@@ -225,10 +214,8 @@ def _gerar_sql_com_mapas(
     return "\n".join(linhas)
 
 
-def salvar_sql(dados: dict[str, list[dict]], caminho_saida: str) -> str:
+def salvar_sql(dados: dict[str, list[dict]], caminho_saida: str | Path) -> str:
     """Gera e grava uma carga SQL a partir de dados já extraídos."""
-    from pathlib import Path
-
     caminho = Path(caminho_saida)
     caminho.parent.mkdir(parents=True, exist_ok=True)
     caminho.write_text(gerar_sql(dados), encoding="utf-8")

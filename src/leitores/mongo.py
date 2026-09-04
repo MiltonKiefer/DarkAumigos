@@ -8,6 +8,7 @@ from pathlib import Path
 from pymongo import MongoClient
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = ROOT_DIR / "output"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -51,7 +52,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=os.getenv("OUTPUT_SQL", "carga_oracle_mongo.sql"),
+        default=os.getenv("OUTPUT_SQL", str(OUTPUT_DIR / "carga_oracle_mongo.sql")),
         help="Arquivo SQL de saída.",
     )
     args = parser.parse_args()

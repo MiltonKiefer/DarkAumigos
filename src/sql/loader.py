@@ -109,8 +109,11 @@ def execute_sql(script: str) -> None:
             LOGGER.info("Conexão Oracle encerrada.")
 
 
-def execute_file(path: Path) -> None:
+def execute_file(path: str | Path) -> None:
     """Lê um arquivo SQL e executa seu conteúdo no Oracle."""
+    path = Path(path)
+    if not path.is_absolute() and path.parts[:1] != ("output",):
+        path = BASE_DIR / "output" / path
     LOGGER.info("Lendo arquivo SQL: %s", path.resolve())
     script = path.read_text(encoding="utf-8")
     LOGGER.info("Arquivo SQL lido: %d bytes.", len(script.encode("utf-8")))

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from src.utilitarios import data_id
+from src.utilitarios import data_id, sql_number
 
 
 def criar_fato_concorrente(concorrentes: list[dict], pedidos: list[dict]) -> list[str]:
@@ -19,7 +19,9 @@ def criar_fato_concorrente(concorrentes: list[dict], pedidos: list[dict]) -> lis
             raise ValueError("Documento de concorrente sem campo de data.")
         data_obj = datetime.strptime(data, "%Y-%m-%d")
         inserts.append(
-            "INSERT INTO FATO_CONCORRENTE (ID_CONCORRENTE, ID_DATA, ANO, MES) VALUES "
-            f"({indice}, {data_id(data)}, {data_obj.year}, {data_obj.month});"
+            "INSERT INTO FATO_CONCORRENTE "
+            "(ID_CONCORRENTE, ID_DATA, ANO, MES, DESCRICAO) VALUES "
+            f"({indice}, {data_id(data)}, {data_obj.year}, {data_obj.month}, "
+            f"{sql_number(concorrente.get('vendas'))});"
         )
     return inserts

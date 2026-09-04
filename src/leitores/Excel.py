@@ -22,10 +22,10 @@ RAIZ_PROJETO = Path(__file__).resolve().parent.parent.parent
 PASTA_DADOS = RAIZ_PROJETO / "Dados"
 
 # Pasta onde serão gerados os arquivos SQL
-PASTA_OUTPUT = RAIZ_PROJETO / "Output"
+PASTA_OUTPUT = RAIZ_PROJETO / "output"
 
 # Nome do arquivo SQL de saída
-ARQUIVO_SAIDA = PASTA_OUTPUT / "insert_fato_concorrente.sql"
+ARQUIVO_SAIDA = PASTA_OUTPUT / "excel_output.sql"
 
 # Tabela Oracle
 TABELA = "FATO_CONCORRENTE"
@@ -186,6 +186,23 @@ def ler_excel(arquivo_excel):
             )
 
     return df
+
+
+def carregar_dados_excel() -> list[dict]:
+    """Carrega os registros do Excel no contrato usado pelo gerador comum."""
+    df = ler_excel(localizar_excel())
+    concorrentes = []
+    for _, linha in df.iterrows():
+        mes_texto = str(linha["Mês"]).strip()
+        if mes_texto not in MESES:
+            raise ValueError(f"Mês inválido no Excel: {mes_texto}")
+        ano = int(linha["Ano"])
+        vendas = None if pd.isna(linha["Vendas (R$)"]) else float(linha["Vendas (R$)"])
+        concorrentes.append({
+            "data": f"{ano:04d}-{MESES[mes_texto]:02d}-01",
+            "vendas": vendas,
+        })
+    return concorrentes
 
 
 # ============================================================

@@ -28,7 +28,8 @@ DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 # Arquivo SQL de saída
-ARQUIVO_SAIDA = "insert_oracle_itabuna.sql"
+OUTPUT_DIR = BASE_DIR / "output"
+ARQUIVO_SAIDA = OUTPUT_DIR / "insert_oracle_itabuna.sql"
 
 
 # ============================================================
@@ -83,10 +84,9 @@ def carregar_dados_postgresql() -> dict[str, list[dict]]:
 
             cursor.execute(
                 """
-                SELECT p.id_produto, COALESCE(c.nome_categoria, p.categoria) AS categoria,
+                SELECT p.id_produto, p.categoria AS categoria,
                        p.preco
                 FROM produtos p
-                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
                 ORDER BY p.id_produto
                 """
             )
@@ -119,19 +119,22 @@ def carregar_dados_postgresql() -> dict[str, list[dict]]:
                     "quantidade": registro["quantidade"],
                     "preco_unitario": registro["valor_unitario"],
                 })
-        return {
+        dados = {
             "clientes": clientes,
             "produtos": produtos,
             "pedidos": list(pedidos_por_id.values()),
             "concorrentes": [],
         }
+        from src.leitores.Excel import PASTA_DADOS, carregar_dados_excel
+        if list(PASTA_DADOS.glob("*.xlsx")):
+            dados["concorrentes"] = carregar_dados_excel()
+        return dados
     finally:
         conexao.close()
 
 
-def salvar_sql_postgresql(caminho_saida: str) -> str:
+def salvar_sql_postgresql(caminho_saida: str | Path) -> str:
     """Gera o SQL PostgreSQL usando exatamente o gerador comum da pipeline."""
-    from pathlib import Path
     from src.sql.gerador import gerar_sql
 
     caminho = Path(caminho_saida)
