@@ -312,7 +312,31 @@ def gerar_dim_cliente(cursor, inserts):
         """
     )
 
-    estados_civis = {}
+    estados_civis = {
+        "S": 1,  # Solteiro(a)
+        "C": 2,  # Casado(a)
+        "D": 3,  # Divorciado(a)
+        "V": 4,  # Viúvo(a)
+        "O": 5,  # Outro
+        "U": 6,  # União estável
+    }
+
+    estados_civis_text = {
+    "SOLTEIRO": 1,
+    "SOLTEIRA": 1,
+    "CASADO": 2,
+    "CASADA": 2,
+    "DIVORCIADO": 3,
+    "DIVORCIADA": 3,
+    "VIUVO": 4,
+    "VIUVA": 4,
+    "VIÚVO": 4,
+    "VIÚVA": 4,
+    "OUTRO": 5,
+    "OUTROS": 5,
+    "UNIAO ESTAVEL": 6,
+    "UNIÃO ESTÁVEL": 6,
+    }
 
     proximo_id = 1
 
@@ -326,7 +350,7 @@ def gerar_dim_cliente(cursor, inserts):
         else:
             estado = estado.strip().upper()
 
-            if estado not in estados_civis:
+            if estado not in estados_civis or estados_civis_text:
                 estados_civis[estado] = proximo_id
                 proximo_id += 1
 
