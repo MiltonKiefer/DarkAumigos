@@ -19,7 +19,8 @@ def criar_fato_venda(pedidos: list[dict]) -> list[str]:
                 "ID_FILIAL, QUANTIDADE, VALOR) VALUES "
                 f"({id_venda}, {int(item['id_produto'])}, "
                 f"{data_id(pedido['data_pedido'])}, {int(pedido['id_cliente'])}, "
-                f"{DEFAULT_FILIAL_ID}, {sql_number(quantidade)}, {sql_number(valor)});"
+                f"{int(pedido.get('id_filial', DEFAULT_FILIAL_ID))}, "
+                f"{sql_number(quantidade)}, {sql_number(valor)});"
             )
             id_venda += 1
     return inserts

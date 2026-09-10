@@ -124,7 +124,10 @@ def carregar_dados_postgresql() -> dict[str, list[dict]]:
             "produtos": produtos,
             "pedidos": list(pedidos_por_id.values()),
             "concorrentes": [],
+            "filiais": [{"id_filial": 2}],
         }
+        for pedido in dados["pedidos"]:
+            pedido["id_filial"] = 2
         from src.leitores.Excel import PASTA_DADOS, carregar_dados_excel
         if list(PASTA_DADOS.glob("*.xlsx")):
             dados["concorrentes"] = carregar_dados_excel()
@@ -301,6 +304,12 @@ def gerar_dim_produto(cursor, inserts):
 def gerar_dim_cliente(cursor, inserts):
     print("Gerando DIM_Cliente...")
 
+    from src.transformacoes.mapas import (
+        criar_mapa_estado_civil,
+        mapear_estado_civil,
+        normalizar_estado_civil,
+    )
+
     clientes = consultar(
         cursor,
         """
@@ -312,49 +321,17 @@ def gerar_dim_cliente(cursor, inserts):
         """
     )
 
-    estados_civis = {
-        "S": 1,  # Solteiro(a)
-        "C": 2,  # Casado(a)
-        "D": 3,  # Divorciado(a)
-        "V": 4,  # Viúvo(a)
-        "O": 5,  # Outro
-        "U": 6,  # União estável
-    }
-
-    estados_civis_text = {
-    "SOLTEIRO": 1,
-    "SOLTEIRA": 1,
-    "CASADO": 2,
-    "CASADA": 2,
-    "DIVORCIADO": 3,
-    "DIVORCIADA": 3,
-    "VIUVO": 4,
-    "VIUVA": 4,
-    "VIÚVO": 4,
-    "VIÚVA": 4,
-    "OUTRO": 5,
-    "OUTROS": 5,
-    "UNIAO ESTAVEL": 6,
-    "UNIÃO ESTÁVEL": 6,
-    }
-
-    proximo_id = 1
+    estados_civis = criar_mapa_estado_civil([
+        {"estado_civil": cliente["estado_civil"]}
+        for cliente in clientes
+    ])
 
     for cliente in clientes:
 
-        estado = cliente["estado_civil"]
-
-        if estado is None:
-            estado_id = None
-
-        else:
-            estado = estado.strip().upper()
-
-            if estado not in estados_civis or estados_civis_text:
-                estados_civis[estado] = proximo_id
-                proximo_id += 1
-
-            estado_id = estados_civis[estado]
+        estado = normalizar_estado_civil(cliente["estado_civil"])
+        estado_id = mapear_estado_civil(estado)
+        if estado_id is None:
+            estado_id = estados_civis.get(estado)
 
         inserts.append(
             gerar_insert(
@@ -449,7 +426,7 @@ def gerar_dim_filial(inserts):
                 "Cidade"
             ],
             [
-                1,
+                2,
                 "Filial Itabuna",
                 "Itabuna"
             ]
@@ -539,7 +516,7 @@ def gerar_fato_venda(cursor, inserts):
                     id_produto,
                     id_data,
                     id_cliente,
-                    1,
+                    2,
                     quantidade,
                     valor
                 ]

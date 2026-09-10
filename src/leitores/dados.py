@@ -24,7 +24,10 @@ def carregar_dados(args: argparse.Namespace) -> dict[str, list[dict]]:
             "produtos": carregar_json(pasta / "06_Feira_Produtos.json"),
             "pedidos": carregar_json(pasta / "07_Feira_Pedidos.json"),
             "concorrentes": carregar_json(concorrentes) if concorrentes.exists() else [],
+            "filiais": [{"id_filial": 3}],
         }
+        for pedido in dados["pedidos"]:
+            pedido.setdefault("id_filial", 3)
     else:
         uri = os.getenv("MONGODB_URI")
         database_name = os.getenv("MONGODB_DB")

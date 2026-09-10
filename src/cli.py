@@ -21,27 +21,65 @@ def _caminho_saida(valor: str) -> Path:
 
 
 def _combinar_fontes(fontes: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
-    """Combina fontes operacionais aplicando offsets para evitar IDs repetidos."""
-    combinado = {"clientes": [], "produtos": [], "pedidos": [], "concorrentes": []}
-    proximo_cliente = proximo_produto = proximo_pedido = 0
+    """Combina fontes mantendo IDs e referências isolados por origem."""
+    combinado = {
+        "clientes": [],
+        "produtos": [],
+        "pedidos": [],
+        "concorrentes": [],
+        "filiais": [],
+    }
+    ids_clientes: set[int] = set()
+    ids_produtos: set[int] = set()
+    ids_pedidos: set[int] = set()
 
-    for fonte in fontes:
+    def remapear_ids(registros, campo, ids_usados, nome_fonte):
+        mapa = {}
+        proximo_id = max(ids_usados, default=0) + 1
+        for registro in registros:
+            antigo = int(registro[campo])
+            if antigo in mapa:
+                raise ValueError(
+                    f"A fonte {nome_fonte} possui IDs duplicados em '{campo}': {antigo}."
+                )
+            novo = antigo
+            if novo in ids_usados or novo <= 0:
+                while proximo_id in ids_usados:
+                    proximo_id += 1
+                novo = proximo_id
+                proximo_id += 1
+            mapa[antigo] = novo
+            ids_usados.add(novo)
+        return mapa
+
+    for indice_fonte, fonte in enumerate(fontes, 1):
         clientes = list(fonte.get("clientes", []))
         produtos = list(fonte.get("produtos", []))
         pedidos = list(fonte.get("pedidos", []))
-        mapa_clientes = {}
-        mapa_produtos = {}
+        nome_fonte = str(fonte.get("nome_fonte", f"#{indice_fonte}"))
+        mapa_clientes = remapear_ids(
+            clientes, "id_cliente", ids_clientes, nome_fonte
+        )
+        mapa_produtos = remapear_ids(
+            produtos, "id_produto", ids_produtos, nome_fonte
+        )
+        mapa_pedidos = remapear_ids(
+            pedidos, "id_pedido", ids_pedidos, nome_fonte
+        )
+        combinado["filiais"].extend(fonte.get("filiais", []))
 
         for cliente in clientes:
             antigo = int(cliente["id_cliente"])
-            novo = antigo + proximo_cliente
-            mapa_clientes[antigo] = novo
-            combinado["clientes"].append({**cliente, "id_cliente": novo})
+            combinado["clientes"].append({
+                **cliente,
+                "id_cliente": mapa_clientes[antigo],
+            })
         for produto in produtos:
             antigo = int(produto["id_produto"])
-            novo = antigo + proximo_produto
-            mapa_produtos[antigo] = novo
-            combinado["produtos"].append({**produto, "id_produto": novo})
+            combinado["produtos"].append({
+                **produto,
+                "id_produto": mapa_produtos[antigo],
+            })
         for pedido in pedidos:
             itens = [
                 {**item, "id_produto": mapa_produtos[int(item["id_produto"])]}
@@ -49,20 +87,22 @@ def _combinar_fontes(fontes: list[dict[str, list[dict]]]) -> dict[str, list[dict
             ]
             combinado["pedidos"].append({
                 **pedido,
-                "id_pedido": int(pedido["id_pedido"]) + proximo_pedido,
+                "id_pedido": mapa_pedidos[int(pedido["id_pedido"])],
                 "id_cliente": mapa_clientes[int(pedido["id_cliente"])],
+                "id_filial": int(pedido.get("id_filial", 3)),
                 "itens": itens,
             })
         combinado["concorrentes"].extend(fonte.get("concorrentes", []))
-        proximo_cliente += max((int(item["id_cliente"]) for item in clientes), default=0)
-        proximo_produto += max((int(item["id_produto"]) for item in produtos), default=0)
-        proximo_pedido += max((int(item["id_pedido"]) for item in pedidos), default=0)
 
     concorrentes_unicos = {
         (item.get("data"), item.get("vendas")): item
         for item in combinado["concorrentes"]
     }
     combinado["concorrentes"] = list(concorrentes_unicos.values())
+    combinado["filiais"] = list({
+        int(filial["id_filial"]): filial
+        for filial in combinado["filiais"]
+    }.values())
     return combinado
 
 
@@ -111,7 +151,11 @@ def main() -> None:
         )
         dados_mongo = carregar_dados(args)
         dados_postgresql = carregar_dados_postgresql()
-        dados = _combinar_fontes([dados_mongo, dados_postgresql, dados_oracle])
+        dados = _combinar_fontes([
+            {**dados_mongo, "nome_fonte": "MongoDB"},
+            {**dados_postgresql, "nome_fonte": "PostgreSQL"},
+            {**dados_oracle, "nome_fonte": "Oracle"},
+        ])
         sql = gerar_sql(dados)
         caminho = _caminho_saida(args.output)
         caminho.parent.mkdir(parents=True, exist_ok=True)

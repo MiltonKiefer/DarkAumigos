@@ -60,6 +60,9 @@ def _normalizar_dados(dados: dict[str, list[dict]]) -> dict[str, list[dict]]:
         "concorrentes": [],
     }
 
+    filiais = dados.get("filiais", [])
+    resultado["filiais"] = list(filiais)
+
     for indice, cliente in enumerate(dados.get("clientes", []), 1):
         contexto = f"Cliente #{indice}"
         estado_civil = _primeiro(cliente, "estado_civil", "estadoCivil")
@@ -115,6 +118,10 @@ def _normalizar_dados(dados: dict[str, list[dict]]) -> dict[str, list[dict]]:
                 "id_cliente", contexto,
             ),
             "data_pedido": _data_iso(data, f"{contexto}: campo 'data_pedido'"),
+            "id_filial": _inteiro(
+                pedido.get("id_filial", dados.get("id_filial", 3)),
+                "id_filial", contexto,
+            ),
             "itens": itens,
         })
 
@@ -154,6 +161,7 @@ def dados_oracle_para_contrato(dados: dict[str, list]) -> dict[str, list[dict]]:
                 "id_cliente": id_cliente,
                 "data_pedido": data_venda,
                 "itens": [],
+                "id_filial": 1,
             },
         )
         pedido["itens"].append({
@@ -167,6 +175,7 @@ def dados_oracle_para_contrato(dados: dict[str, list]) -> dict[str, list[dict]]:
         "produtos": produtos,
         "pedidos": list(pedidos_por_id.values()),
         "concorrentes": [],
+        "filiais": dados.get("filiais", [{"id_filial": 1}]),
     }
 
 
@@ -185,6 +194,8 @@ def _gerar_sql_com_mapas(
     produtos = dados["produtos"]
     pedidos = dados["pedidos"]
     concorrentes = dados.get("concorrentes", [])
+    ids_filiais = {int(filial["id_filial"]) for filial in dados.get("filiais", [])}
+    ids_filiais.update(int(pedido["id_filial"]) for pedido in pedidos)
     validar_chaves(clientes, produtos, pedidos)
     mapa_categorias = mapa_categorias or criar_mapa_categorias(produtos)
     mapa_estado_civil = mapa_estado_civil or criar_mapa_estado_civil(clientes)
@@ -201,7 +212,7 @@ def _gerar_sql_com_mapas(
     linhas.append("")
     linhas.extend(criar_dim_cliente(clientes, mapa_estado_civil))
     linhas.append("")
-    linhas.extend(criar_dim_filial())
+    linhas.extend(criar_dim_filial(ids_filiais))
     linhas.append("")
     linhas.extend(criar_fato_venda(pedidos))
     linhas.append("")

@@ -51,6 +51,8 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 load_dotenv(BASE_DIR / ".env")
 
+from src.transformacoes.mapas import mapear_estado_civil
+
 
 # ============================================================
 # CONFIGURAÇÕES
@@ -180,22 +182,7 @@ def escape_comment(text):
 # ============================================================
 
 def map_estado_civil(valor):
-    if valor is None:
-        return None
-
-    texto = str(valor).strip().upper()
-
-    if texto in ESTADO_CIVIL_MAP:
-        return ESTADO_CIVIL_MAP[texto]
-
-    if texto in ESTADO_CIVIL_TEXT_MAP:
-        return ESTADO_CIVIL_TEXT_MAP[texto]
-
-    # Se já for numérico, preserva.
-    try:
-        return int(texto)
-    except ValueError:
-        return None
+    return mapear_estado_civil(valor)
 
 
 def id_data(data_venda):

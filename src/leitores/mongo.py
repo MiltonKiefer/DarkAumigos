@@ -13,6 +13,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.config import DEFAULT_COLLECTIONS
+from src.config import DEFAULT_FILIAL_ID
 from src.utilitarios import normalizar_documentos
 
 
@@ -41,6 +42,9 @@ def carregar_do_mongo(uri: str, database_name: str) -> dict[str, list[dict]]:
             else:
                 dados[chave] = []
                 print(f"Coleção '{nome_colecao}' não encontrada (ok se opcional).")
+        dados["filiais"] = [{"id_filial": DEFAULT_FILIAL_ID}]
+        for pedido in dados.get("pedidos", []):
+            pedido.setdefault("id_filial", DEFAULT_FILIAL_ID)
         return dados
     finally:
         client.close()
