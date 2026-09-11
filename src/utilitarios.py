@@ -35,6 +35,11 @@ def quadrimestre(data: str) -> int:
     return ((month - 1) // 4) + 1
 
 
+def periodo_id(data: str) -> int:
+    data_obj = datetime.strptime(data, "%Y-%m-%d")
+    return data_obj.year * 10 + ((data_obj.month - 1) // 4) + 1
+
+
 def normalizar_documentos(documentos: list[dict]) -> list[dict]:
     resultado = []
     for documento in documentos:

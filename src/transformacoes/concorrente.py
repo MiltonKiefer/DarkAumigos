@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from src.utilitarios import data_id, sql_number
+from src.utilitarios import periodo_id, sql_number
 
 
 def criar_fato_concorrente(concorrentes: list[dict], pedidos: list[dict]) -> list[str]:
@@ -21,7 +21,7 @@ def criar_fato_concorrente(concorrentes: list[dict], pedidos: list[dict]) -> lis
         inserts.append(
             "INSERT INTO FATO_CONCORRENTE "
             "(ID_CONCORRENTE, ID_DATA, ANO, MES, DESCRICAO) VALUES "
-            f"({indice}, {data_id(data)}, {data_obj.year}, {data_obj.month}, "
+            f"({indice}, {periodo_id(data)}, {data_obj.year}, {data_obj.month}, "
             f"{sql_number(concorrente.get('vendas'))});"
         )
     return inserts

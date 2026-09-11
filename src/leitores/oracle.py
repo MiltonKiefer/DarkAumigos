@@ -187,14 +187,14 @@ def map_estado_civil(valor):
 
 def id_data(data_venda):
     """
-    Gera a chave da DIM_Tempo no formato YYYYMMDD.
+    Gera a chave da DIM_Tempo a partir do ano e quadrimestre.
     Exemplo:
-        15/08/2026 -> 20260815
+        15/08/2026 -> 20262
     """
     if data_venda is None:
         return None
 
-    return int(data_venda.strftime("%Y%m%d"))
+    return data_venda.year * 10 + quadrimestre(data_venda)
 
 
 def quadrimestre(data_venda):
@@ -328,20 +328,20 @@ def gerar_dim_tempo(dados, arquivo):
     arquivo.write("-- DIM_TEMPO\n")
     arquivo.write("-- ====================================================\n")
 
-    datas = {}
+    periodos = {}
 
     for row in dados["vendas_itens"]:
         _, _, data_venda, _, _, _ = row
 
         if data_venda is not None:
             chave = id_data(data_venda)
-            datas[chave] = (
+            periodos[chave] = (
                 data_venda.year,
                 quadrimestre(data_venda)
             )
 
-    for id_data_value in sorted(datas):
-        ano, quad = datas[id_data_value]
+    for id_data_value in sorted(periodos):
+        ano, quad = periodos[id_data_value]
 
         arquivo.write(
             "INSERT INTO DIM_TEMPO "

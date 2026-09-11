@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 from src.config import DEFAULT_FILIAL_ID
-from src.utilitarios import data_id, sql_number
+from src.utilitarios import periodo_id, sql_number
 
 
 def criar_fato_venda(pedidos: list[dict]) -> list[str]:
@@ -18,7 +18,7 @@ def criar_fato_venda(pedidos: list[dict]) -> list[str]:
                 "INSERT INTO FATO_VENDA (ID_VENDA, ID_PRODUTO, ID_DATA, ID_CLIENTE, "
                 "ID_FILIAL, QUANTIDADE, VALOR) VALUES "
                 f"({id_venda}, {int(item['id_produto'])}, "
-                f"{data_id(pedido['data_pedido'])}, {int(pedido['id_cliente'])}, "
+                f"{periodo_id(pedido['data_pedido'])}, {int(pedido['id_cliente'])}, "
                 f"{int(pedido.get('id_filial', DEFAULT_FILIAL_ID))}, "
                 f"{sql_number(quantidade)}, {sql_number(valor)});"
             )

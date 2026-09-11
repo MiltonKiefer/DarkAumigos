@@ -243,13 +243,6 @@ def gerar_inserts(df):
         # ----------------------------------------------------
         # ID_DATA
         #
-        # ATENÇÃO:
-        # Deve corresponder aos IDs existentes na DIM_TEMPO.
-        # ----------------------------------------------------
-
-        id_data = indice + 1
-
-        # ----------------------------------------------------
         # ANO
         # ----------------------------------------------------
 
@@ -276,6 +269,9 @@ def gerar_inserts(df):
         mes = MESES[
             mes_texto
         ]
+
+        quadrimestre = ((mes - 1) // 4) + 1
+        id_data = ano * 10 + quadrimestre
 
         # ----------------------------------------------------
         # VENDAS

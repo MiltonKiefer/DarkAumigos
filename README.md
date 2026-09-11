@@ -168,12 +168,12 @@ DESCRICAO
 O campo `Mês` do Excel é convertido para seu respectivo número. O valor de
 `Vendas (R$)` é convertido para um formato numérico compatível com Oracle.
 
-O `ID_CONCORRENTE` e o `ID_DATA` são gerados sequencialmente a partir de `1`,
-acompanhando a ordem dos registros da planilha.
+O `ID_CONCORRENTE` é gerado sequencialmente a partir de `1`. O `ID_DATA` usa a
+chave do período no formato `ANO * 10 + QUADRIMESTRE`, garantindo que todas as
+vendas do mesmo ano e quadrimestre apontem para a mesma linha da `DIM_TEMPO`.
 
 > **Atenção:** o `ID_DATA` precisa corresponder aos registros existentes na
-> `DIM_TEMPO`. A sequência automática (`1, 2, 3...`) somente é válida se os IDs
-> da dimensão estiverem organizados dessa mesma forma.
+> `DIM_TEMPO`; ele não representa mais a data completa da venda.
 
 ### Arquivo de saída
 

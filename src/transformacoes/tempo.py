@@ -2,25 +2,26 @@
 
 from datetime import datetime
 
-from src.utilitarios import data_id, quadrimestre
+from src.utilitarios import periodo_id, quadrimestre
 
 
 def criar_dim_tempo(
     pedidos: list[dict], concorrentes: list[dict] | None = None
 ) -> list[str]:
-    datas = {
-        p["data_pedido"] for p in pedidos if p.get("data_pedido")
+    periodos = {
+        (datetime.strptime(p["data_pedido"], "%Y-%m-%d").year, quadrimestre(p["data_pedido"]))
+        for p in pedidos
+        if p.get("data_pedido")
     }
-    datas.update(
-        concorrente["data"]
+    periodos.update(
+        (datetime.strptime(concorrente["data"], "%Y-%m-%d").year, quadrimestre(concorrente["data"]))
         for concorrente in concorrentes or []
         if concorrente.get("data")
     )
     inserts = ["-- DIM_TEMPO"]
-    for data in sorted(datas):
+    for ano, quad in sorted(periodos):
         inserts.append(
             "INSERT INTO DIM_TEMPO (ID_DATA, ANO, QUADRIMESTRE) VALUES "
-            f"({data_id(data)}, {datetime.strptime(data, '%Y-%m-%d').year}, "
-            f"{quadrimestre(data)});"
+            f"({ano * 10 + quad}, {ano}, {quad});"
         )
     return inserts

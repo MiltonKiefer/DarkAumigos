@@ -363,27 +363,19 @@ def gerar_dim_tempo(cursor, inserts):
         cursor,
         """
         SELECT DISTINCT
-            data_venda
+            EXTRACT(YEAR FROM data_venda)::INTEGER AS ano,
+            (((EXTRACT(MONTH FROM data_venda)::INTEGER - 1) / 4) + 1) AS quadrimestre
         FROM vendas
         WHERE data_venda IS NOT NULL
-        ORDER BY data_venda
+        ORDER BY ano, quadrimestre
         """
     )
 
     for registro in datas:
 
-        data_venda = registro["data_venda"]
-
-        # ID no formato YYYYMMDD
-        id_data = int(data_venda.strftime("%Y%m%d"))
-
-        ano = data_venda.year
-
-        # Quadrimestre:
-        # Janeiro-Abril = 1
-        # Maio-Agosto = 2
-        # Setembro-Dezembro = 3
-        quadrimestre = ((data_venda.month - 1) // 4) + 1
+        ano = registro["ano"]
+        quadrimestre = registro["quadrimestre"]
+        id_data = ano * 10 + quadrimestre
 
         inserts.append(
             gerar_insert(
@@ -469,9 +461,8 @@ def gerar_fato_venda(cursor, inserts):
 
         data_venda = venda["data_venda"]
 
-        id_data = int(
-            data_venda.strftime("%Y%m%d")
-        )
+        quadrimestre = ((data_venda.month - 1) // 4) + 1
+        id_data = data_venda.year * 10 + quadrimestre
 
         id_produto = venda["id_produto"]
 
