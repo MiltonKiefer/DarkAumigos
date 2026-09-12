@@ -51,7 +51,11 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 load_dotenv(BASE_DIR / ".env")
 
-from src.transformacoes.mapas import mapear_estado_civil
+from src.transformacoes.mapas import (
+    criar_mapa_estado_civil,
+    mapear_estado_civil,
+    normalizar_estado_civil,
+)
 
 
 # ============================================================
@@ -298,13 +302,20 @@ def gerar_dim_cliente(dados, arquivo):
     arquivo.write("-- DIM_CLIENTE\n")
     arquivo.write("-- ====================================================\n")
 
-    for id_cliente, estado_civil in dados["clientes"]:
-        estado = map_estado_civil(estado_civil)
+    mapa_estados = criar_mapa_estado_civil([
+        {"estado_civil": estado_civil}
+        for _, estado_civil in dados["clientes"]
+    ])
+    estados = {
+        mapa_estados[normalizar_estado_civil(estado_civil)]
+        for _, estado_civil in dados["clientes"]
+    }
 
+    for estado in sorted(estados):
         arquivo.write(
             "INSERT INTO DIM_CLIENTE "
             "(ID_CLIENTE, ESTADO_CIVIL) VALUES "
-            f"({sql_number(id_cliente)}, "
+            f"({sql_number(estado)}, "
             f"{sql_number(estado)});\n"
         )
 
@@ -369,6 +380,14 @@ def gerar_fato_venda(dados, arquivo):
     arquivo.write("-- ====================================================\n")
 
     vendas = {}
+    mapa_estados = criar_mapa_estado_civil([
+        {"estado_civil": estado_civil}
+        for _, estado_civil in dados["clientes"]
+    ])
+    estados_por_cliente = {
+        id_cliente: mapa_estados[normalizar_estado_civil(estado_civil)]
+        for id_cliente, estado_civil in dados["clientes"]
+    }
 
     for row in dados["vendas_itens"]:
         (
@@ -411,7 +430,7 @@ def gerar_fato_venda(dados, arquivo):
             f"({sql_number(id_venda)}, "
             f"{sql_number(venda['id_produto'])}, "
             f"{sql_number(id_data_value)}, "
-            f"{sql_number(venda['id_cliente'])}, "
+            f"{sql_number(estados_por_cliente[venda['id_cliente']])}, "
             f"{ID_FILIAL_SALVADOR}, "
             f"{sql_number(venda['quantidade'])}, "
             f"{sql_number(venda['valor'])});\n"

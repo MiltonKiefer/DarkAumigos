@@ -41,9 +41,10 @@ def mapear_estado_civil(valor: object) -> int | None:
     if texto in mapa:
         return mapa[texto]
     try:
-        return int(texto)
+        codigo = int(texto)
+        return codigo if codigo in ESTADOS_CIVIS.values() else ESTADOS_CIVIS["O"]
     except ValueError:
-        return None
+        return ESTADOS_CIVIS["O"]
 
 
 def criar_mapa_categorias(produtos: list[dict]) -> dict[str, int]:
@@ -52,16 +53,9 @@ def criar_mapa_categorias(produtos: list[dict]) -> dict[str, int]:
 
 
 def criar_mapa_estado_civil(clientes: list[dict]) -> dict[str, int]:
-    mapa = {**ESTADOS_CIVIS, **ESTADOS_CIVIS_TEXTO, "INEXISTENTE": 7}
-    proximo_id = max(mapa.values()) + 1
-
+    mapa = {}
     for cliente in clientes:
         estado = normalizar_estado_civil(cliente.get("estado_civil"))
-        if estado not in mapa:
-            codigo = mapear_estado_civil(estado)
-            if codigo is None:
-                codigo = proximo_id
-                proximo_id += 1
-            mapa[estado] = codigo
+        mapa[estado] = mapear_estado_civil(estado)
 
     return mapa

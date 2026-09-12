@@ -306,7 +306,6 @@ def gerar_dim_cliente(cursor, inserts):
 
     from src.transformacoes.mapas import (
         criar_mapa_estado_civil,
-        mapear_estado_civil,
         normalizar_estado_civil,
     )
 
@@ -326,13 +325,15 @@ def gerar_dim_cliente(cursor, inserts):
         for cliente in clientes
     ])
 
+    estados_gerados = set()
     for cliente in clientes:
 
         estado = normalizar_estado_civil(cliente["estado_civil"])
-        estado_id = mapear_estado_civil(estado)
-        if estado_id is None:
-            estado_id = estados_civis.get(estado)
+        estado_id = estados_civis[estado]
 
+        if estado_id in estados_gerados:
+            continue
+        estados_gerados.add(estado_id)
         inserts.append(
             gerar_insert(
                 "DIM_Cliente",
@@ -341,7 +342,7 @@ def gerar_dim_cliente(cursor, inserts):
                     "Estado_Civil"
                 ],
                 [
-                    cliente["id_cliente"],
+                    estado_id,
                     estado_id
                 ]
             )
@@ -435,6 +436,14 @@ def gerar_dim_filial(inserts):
 def gerar_fato_venda(cursor, inserts):
     print("Gerando FATO_Venda...")
 
+    from src.transformacoes.mapas import (
+        criar_mapa_estado_civil,
+        normalizar_estado_civil,
+    )
+
+    clientes = consultar(cursor, "SELECT id_cliente, estado_civil FROM clientes")
+    mapa_estados = criar_mapa_estado_civil(clientes)
+
     vendas = consultar(
         cursor,
         """
@@ -442,6 +451,7 @@ def gerar_fato_venda(cursor, inserts):
             iv.id_item,
             iv.id_venda,
             v.id_cliente,
+            c.estado_civil,
             v.data_venda,
             iv.id_produto,
             iv.quantidade,
@@ -449,6 +459,8 @@ def gerar_fato_venda(cursor, inserts):
         FROM itens_venda iv
         INNER JOIN vendas v
             ON v.id_venda = iv.id_venda
+        INNER JOIN clientes c
+            ON c.id_cliente = v.id_cliente
         ORDER BY iv.id_item
         """
     )
@@ -457,7 +469,7 @@ def gerar_fato_venda(cursor, inserts):
 
         id_item = venda["id_item"]
 
-        id_cliente = venda["id_cliente"]
+        id_cliente = mapa_estados[normalizar_estado_civil(venda["estado_civil"])]
 
         data_venda = venda["data_venda"]
 

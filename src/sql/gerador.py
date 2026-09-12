@@ -7,7 +7,11 @@ from typing import Any
 from src.transformacoes.cliente import criar_dim_cliente
 from src.transformacoes.concorrente import criar_fato_concorrente
 from src.transformacoes.filial import criar_dim_filial
-from src.transformacoes.mapas import criar_mapa_categorias, criar_mapa_estado_civil
+from src.transformacoes.mapas import (
+    criar_mapa_categorias,
+    criar_mapa_estado_civil,
+    normalizar_estado_civil,
+)
 from src.transformacoes.produto import criar_dim_produto
 from src.transformacoes.tempo import criar_dim_tempo
 from src.transformacoes.venda import criar_fato_venda
@@ -199,6 +203,12 @@ def _gerar_sql_com_mapas(
     validar_chaves(clientes, produtos, pedidos)
     mapa_categorias = mapa_categorias or criar_mapa_categorias(produtos)
     mapa_estado_civil = mapa_estado_civil or criar_mapa_estado_civil(clientes)
+    mapa_clientes = {
+        int(cliente["id_cliente"]): mapa_estado_civil[
+            normalizar_estado_civil(cliente.get("estado_civil"))
+        ]
+        for cliente in clientes
+    }
     linhas = [
         "-- ============================================================",
         "-- CARGA DE DADOS - FONTES OPERACIONAIS -> ORACLE OLAP",
@@ -214,7 +224,7 @@ def _gerar_sql_com_mapas(
     linhas.append("")
     linhas.extend(criar_dim_filial(ids_filiais))
     linhas.append("")
-    linhas.extend(criar_fato_venda(pedidos))
+    linhas.extend(criar_fato_venda(pedidos, mapa_clientes))
     linhas.append("")
     linhas.extend(criar_fato_concorrente(concorrentes, pedidos))
     linhas.append("")
