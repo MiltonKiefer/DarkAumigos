@@ -6,9 +6,10 @@ Dados.
 
 ## Status
 
-**ETL parcial.** A extração, a validação básica e a transformação para
-`INSERTs` já estão implementadas. Ainda falta validar e executar a carga em um
-Oracle real, além de concluir os testes e os ajustes finais do modelo.
+**ETL concluída.** A extração, a validação básica, a transformação para
+`INSERTs`, a combinação de fontes e a carga opcional em Oracle estão
+implementadas. A execução em um Oracle real continua dependendo das credenciais,
+do DDL e do ambiente de cada instalação.
 
 ## Arquitetura
 
@@ -21,12 +22,14 @@ src/
 ├── utilitarios.py              # Formatação SQL, datas e documentos
 ├── leitores/
 │   ├── dados.py                # Escolha da fonte e orquestração da leitura
-│   ├── json_reader.py                 # Leitura de arquivos JSON locais
+│   ├── json_reader.py          # Leitura de arquivos JSON locais
 │   └── mongo.py                # Leitura das coleções do MongoDB Atlas
-│   └── postgresql.py           # PostgreSQL/Supabase -> Oracle (opcional)
+│   ├── postgresql.py           # PostgreSQL/Supabase -> Oracle (opcional)
+│   ├── oracle.py               # Leitura do Oracle de origem
+│   └── Excel.py                # Leitura de vendas de concorrentes em Excel
 ├── transformacoes/
 │   ├── cliente.py              # DIM_Cliente
-│   ├── concorrente.py           # FATO_Concorrente
+│   ├── concorrente.py          # FATO_Concorrente
 │   ├── filial.py               # DIM_Filial padrão
 │   ├── mapas.py                # Códigos de categoria e estado civil
 │   ├── produto.py              # DIM_Produto
@@ -35,7 +38,8 @@ src/
 ├── validacao/
 │   └── chaves.py               # Referências de clientes e produtos
 └── sql/
-	 └── gerador.py              # Montagem ordenada do arquivo SQL
+	 ├── gerador.py              # Montagem ordenada do arquivo SQL
+	 └── loader.py               # Execução do SQL no Oracle
 ```
 
 Os módulos relacionados às tabelas usam nomes em português para facilitar a
@@ -69,6 +73,16 @@ POSTGRES_DB="postgres"
 POSTGRES_USER="postgres"
 POSTGRES_PASSWORD="sua_senha"
 POSTGRES_SSLMODE="require"
+ORACLE_USER="usuario_destino"
+ORACLE_PASSWORD="sua_senha"
+ORACLE_DSN="host:1521/servico"
+# Alternativa ao ORACLE_DSN:
+# ORACLE_HOST="host"
+# ORACLE_PORT="1521"
+# ORACLE_SERVICE="servico"
+ORACLE_ORIGEM_USER="usuario_origem"
+ORACLE_ORIGEM_PASSWORD="sua_senha"
+ORACLE_ORIGEM_DSN="host:1521/servico"
 ```
 
 O arquivo `.env` não deve ser versionado.
@@ -104,6 +118,14 @@ variáveis `POSTGRES_*` preenchidas):
 python main.py --postgresql
 ```
 
+Para gerar o SQL e carregá-lo diretamente no Oracle destino, use
+`--load-oracle` com qualquer fluxo de entrada:
+
+```bash
+python main.py --load-oracle
+python main.py --postgresql --load-oracle
+```
+
 Para combinar MongoDB, PostgreSQL e Oracle e carregar o resultado diretamente
 no Oracle, use o atalho:
 
@@ -112,6 +134,12 @@ python main.py --carga-completa
 ```
 
 Esse comando equivale a `python main.py --todas-fontes --load-oracle`.
+
+O parâmetro `--todas-fontes` combina MongoDB/JSON, PostgreSQL e Oracle de
+origem. A pipeline remapeia IDs conflitantes entre as fontes, preserva um
+produto de serviço com o ID reservado `18` e elimina registros de concorrentes
+duplicados. Quando existe um arquivo `.xlsx` em `Dados`, ele é usado para os
+dados de `FATO_CONCORRENTE` no lugar dos concorrentes vindos de JSON ou MongoDB.
 
 Ou usar as funções do módulo diretamente em um script Python:
 
@@ -132,18 +160,18 @@ um arquivo Excel e geração de `INSERTs` compatíveis com a tabela Oracle
 
 ### Estrutura de pastas
 
-O leitor Python fica em `src/leitores` e utiliza a raiz do projeto para localizar
-automaticamente as pastas `Dados` e `Output`:
+O leitor Python fica em `src/leitores/Excel.py` e utiliza a raiz do projeto para
+localizar automaticamente as pastas `Dados` e `output`:
 
 ```text
 DarkAumigos/
 ├── Dados/
 │   └── 08_Vendas_Concorrente.xlsx
-├── Output/
-│   └── insert_fato_concorrente.sql
+├── output/
+│   └── excel_output.sql
 └── src/
     └── leitores/
-        └── concorrente.py
+		└── Excel.py
 ```
 
 O arquivo Excel é procurado automaticamente dentro da pasta `Dados`. Se houver
@@ -186,20 +214,19 @@ vendas do mesmo ano e quadrimestre apontem para a mesma linha da `DIM_TEMPO`.
 
 ### Arquivo de saída
 
-O arquivo SQL é gerado automaticamente na pasta `Output`:
-
+O arquivo SQL auxiliar é gerado automaticamente na pasta `output`:
 ```text
-Output/insert_fato_concorrente.sql
+output/excel_output.sql
 ```
 
-A pasta `Output` também é criada automaticamente caso ainda não exista.
+A pasta `output` também é criada automaticamente caso ainda não exista.
 
 Exemplo de `INSERT` gerado:
 
 ```sql
 INSERT INTO FATO_CONCORRENTE
 (ID_CONCORRENTE, ID_DATA, ANO, MES, DESCRICAO)
-VALUES (1, 1, 2024, 1, 185000);
+VALUES (1, 20241, 2024, 1, 185000);
 ```
 
 ### Observação sobre `DESCRICAO`
@@ -212,60 +239,60 @@ Caso o modelo Oracle seja alterado para representar esse valor como `VENDAS`,
 o `INSERT` e o código Python deverão ser ajustados para utilizar o novo nome da
 coluna.
 
-## Próximos passos do ETL
+## Estado atual e próximos passos
 
 1. **Validar o contrato dos dados:** conferir nomes, tipos, campos obrigatórios
 	 e datas das coleções reais contra o DDL Oracle.
-	- Status: Parcial — existe `src/validacao/chaves.py` para checagens básicas,
-	  mas a validação completa contra o DDL Oracle não foi automatizada.
+	- Status: Implementado para o contrato usado pela pipeline, com checagens
+	  básicas em `src/validacao/chaves.py`. A validação final continua dependente
+	  do DDL e dos dados reais de cada ambiente.
 
 2. **Validar o SQL no Oracle:** executar o arquivo em um ambiente de teste e
 	 corrigir diferenças entre o DDL e os documentos de origem.
-	- Status: Parcial — o gerador de SQL (`src/sql/gerador.py`) cria o script;
-	  foi adicionado um loader inicial (`src/sql/loader.py`), porém exige testes
-	  práticos, tratamento de blocos PL/SQL e verificação de dependências do
-	  cliente Oracle (Instant Client) antes da homologação.
+	- Status: Implementado — o gerador de SQL (`src/sql/gerador.py`) cria o
+	  script e `src/sql/loader.py` permite executá-lo com `--load-oracle`.
+	  A homologação ainda exige testes práticos e os privilégios adequados no
+	  Oracle.
 
 3. **Concluir a carga (idempotência e estratégia):** definir se a execução
 	 será manual ou automatizada, e implementar proteção contra duplicação de
 	 dimensões/fatos em reexecuções.
-	- Status: Pendente — geração de INSERTs está pronta; políticas de deduplicação
-	  e reexecução devem ser definidas e implementadas.
+	- Status: Parcial — a combinação de fontes elimina concorrentes duplicados e
+	  remapeia IDs conflitantes, mas os `INSERTs` não implementam deduplicação
+	  geral para reexecuções.
 
 4. **Completar concorrentes:** confirmar os campos da coleção e sua relação
 	 com `FATO_Concorrente`.
-	- Status: Parcial — existe `src/transformacoes/concorrente.py`, mas os campos
-	  e o mapeamento devem ser validados com os dados reais.
+	- Status: Implementado — o fluxo aceita concorrentes de JSON/MongoDB ou
+	  planilha Excel e gera `FATO_CONCORRENTE`.
 
 5. **Adicionar testes:** testar leitores, mapeamentos e validações.
-	- Status: Pendente (não essencial para entrega imediata; recomendado).
+	- Status: Recomendado — ampliar a cobertura de testes para leitores,
+	  mapeamentos, combinações de fontes e carga Oracle.
 
 6. **Documentar o DDL e o processo:** registrar o esquema Oracle, responsáveis
 	 por cada componente e o procedimento de homologação.
-	- Status: Pendente — documentação do DDL e do processo de carga precisa ser
-	  completada.
+	- Status: Parcial — este README documenta o processo e as variáveis de
+	  ambiente; o DDL e os privilégios específicos devem ser registrados conforme
+	  o ambiente Oracle usado.
 
 ---
 
-Pendências técnicas essenciais para a carga Oracle (novas / re-priorizadas):
+Limitações operacionais conhecidas:
 
-- **Testar a conexão Oracle com `oracledb`** e verificar credenciais/DSN.
-- **Tratar corretamente PL/SQL e blocos contendo `;`** (o parser atual é
-  ingênuo e pode quebrar blocos PL/SQL ou scripts que dependam de `;`).
-- **Melhorar logging e tratamento de erros/rollback** no loader (relatórios,
-  retries e mensagens úteis em falhas).
-- **Adicionar opções CLI úteis para execução no Oracle:** `--dry-run`,
-  `--load-oracle --retry N` e timeout configurável.
-- **Verificar e documentar requisitos do cliente Oracle (Instant Client)** e
-  privilégios necessários no usuário Oracle para executar os INSERTs/COMMIT.
-- **Implementar execução em lotes/bulk** (usar `executemany` ou estratégias de
-  batching) para suportar grandes volumes sem consumir muita memória.
+- **O loader separa comandos pelo caractere `;`**; scripts com blocos PL/SQL ou
+	semântica mais complexa exigem tratamento adicional.
+- **A CLI não oferece `--dry-run`, retry ou timeout configurável.** Essas opções
+	podem ser adicionadas caso sejam necessárias para operação em produção.
+- **A execução exige `oracledb`, credenciais válidas e os privilégios Oracle**
+	necessários para os `INSERTs` e o `COMMIT`.
+- **A carga é executada comando a comando.** Para volumes grandes, uma estratégia
+	de lotes ou `executemany` ainda pode melhorar o consumo de memória e o tempo.
 
 Notas:
-- O loader inicial foi adicionado em `src/sql/loader.py`, e facilita testes
-  locais, mas ainda falta robustez (parsing, logging, batched execution).
-- Os testes unitários/integration são desejáveis, mas não foram adicionados aqui
-  conforme sua orientação; foquei nas pendências operacionais essenciais.
+- O loader em `src/sql/loader.py` registra comandos, confirma a transação e faz
+	rollback em caso de falha.
+- Testes unitários e de integração continuam recomendados para homologação.
 
 ## Observações sobre o leitor PostgreSQL
 
