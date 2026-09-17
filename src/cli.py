@@ -163,7 +163,16 @@ def main() -> None:
         action="store_true",
         help="Após gerar o SQL, executar o script no banco Oracle usando vars ORACLE_*.",
     )
+    parser.add_argument(
+        "--carga-completa",
+        action="store_true",
+        help="Atalho para --todas-fontes --load-oracle.",
+    )
     args = parser.parse_args()
+
+    if args.carga_completa:
+        args.todas_fontes = True
+        args.load_oracle = True
 
     if args.todas_fontes:
         from src.leitores.oracle import buscar_dados, conectar_origem

@@ -104,6 +104,15 @@ variáveis `POSTGRES_*` preenchidas):
 python main.py --postgresql
 ```
 
+Para combinar MongoDB, PostgreSQL e Oracle e carregar o resultado diretamente
+no Oracle, use o atalho:
+
+```bash
+python main.py --carga-completa
+```
+
+Esse comando equivale a `python main.py --todas-fontes --load-oracle`.
+
 Ou usar as funções do módulo diretamente em um script Python:
 
 ```python
