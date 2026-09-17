@@ -1,8 +1,19 @@
 """Leitura das coleções do MongoDB Atlas."""
 
+import argparse
+import os
+import sys
+from pathlib import Path
+
 from pymongo import MongoClient
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = ROOT_DIR / "output"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from src.config import DEFAULT_COLLECTIONS
+from src.config import DEFAULT_FILIAL_ID
 from src.utilitarios import normalizar_documentos
 
 
@@ -31,6 +42,38 @@ def carregar_do_mongo(uri: str, database_name: str) -> dict[str, list[dict]]:
             else:
                 dados[chave] = []
                 print(f"Coleção '{nome_colecao}' não encontrada (ok se opcional).")
+        dados["filiais"] = [{"id_filial": DEFAULT_FILIAL_ID}]
+        for pedido in dados.get("pedidos", []):
+            pedido.setdefault("id_filial", DEFAULT_FILIAL_ID)
         return dados
     finally:
         client.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extrai somente o MongoDB e gera a carga SQL Oracle."
+    )
+    parser.add_argument(
+        "--output",
+        default=os.getenv("OUTPUT_SQL", str(OUTPUT_DIR / "carga_oracle_mongo.sql")),
+        help="Arquivo SQL de saída.",
+    )
+    args = parser.parse_args()
+
+    uri = os.getenv("MONGODB_URI")
+    database_name = os.getenv("MONGODB_DB")
+    if not uri or not database_name:
+        raise RuntimeError("Defina MONGODB_URI e MONGODB_DB no arquivo .env.")
+
+    from src.sql.gerador import gerar_sql
+
+    dados = carregar_do_mongo(uri, database_name)
+    caminho_saida = Path(args.output)
+    caminho_saida.parent.mkdir(parents=True, exist_ok=True)
+    caminho_saida.write_text(gerar_sql(dados), encoding="utf-8")
+    print(f"SQL MongoDB gerado: {caminho_saida.resolve()}")
+
+
+if __name__ == "__main__":
+    main()
